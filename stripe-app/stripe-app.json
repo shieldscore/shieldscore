@@ -1,0 +1,12 @@
+{
+  "id": "com.shieldscore.app",
+  "version": "0.0.1",
+  "name": "ShieldScore",
+  "icon": "",
+  "permissions": [],
+  "ui_extension": {
+    "views": [],
+    "actions": [],
+    "content_security_policy": {}
+  }
+}
