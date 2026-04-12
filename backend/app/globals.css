@@ -1,8 +1,12 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
+  --font-sans: var(--font-jakarta), system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), monospace;
+}
+
+:root {
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 html {
@@ -10,16 +14,133 @@ html {
 }
 
 body {
-  font-family: var(--font-dm-sans), system-ui, sans-serif;
+  font-family: var(--font-jakarta), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+::selection {
+  background: #dcfce7;
 }
 
-.animate-blink {
-  animation: blink 2s infinite;
+/* Gradient accent line at very top */
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #22c55e, #0d9488);
+  z-index: 100;
+  pointer-events: none;
+}
+
+/* ── Hero entrance animations ── */
+
+@keyframes hero-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.hero-stagger-1 {
+  animation: hero-fade-up 0.6s var(--ease-premium) 0ms both;
+}
+.hero-stagger-2 {
+  animation: hero-fade-up 0.6s var(--ease-premium) 150ms both;
+}
+.hero-stagger-3 {
+  animation: hero-fade-up 0.6s var(--ease-premium) 300ms both;
+}
+.hero-stagger-4 {
+  animation: hero-fade-up 0.6s var(--ease-premium) 450ms both;
+}
+
+@keyframes hero-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.hero-mockup-enter {
+  animation: hero-slide-in 0.8s var(--ease-premium) 200ms both;
+}
+
+/* ── Floating bob ── */
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* ── Scroll-triggered fade-in-up ── */
+
+.animate-on-scroll {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.5s var(--ease-premium),
+    transform 0.5s var(--ease-premium);
+}
+.animate-on-scroll.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ── Button hover ── */
+
+.btn-hover {
+  transition:
+    transform 0.15s var(--ease-premium),
+    box-shadow 0.15s var(--ease-premium),
+    background-color 0.15s;
+}
+.btn-hover:hover {
+  transform: scale(1.03);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Pricing card hover ── */
+
+.pricing-hover {
+  transition:
+    transform 0.2s var(--ease-premium),
+    box-shadow 0.2s var(--ease-premium);
+}
+.pricing-hover:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Mockup perspective tilt ── */
+
+.mockup-tilt {
+  transform: perspective(1500px) rotateX(2deg);
+  transition:
+    transform 0.4s var(--ease-premium),
+    box-shadow 0.4s var(--ease-premium);
+}
+.mockup-tilt:hover {
+  transform: perspective(1500px) rotateX(0deg);
+  box-shadow: 0 25px 70px rgba(0, 0, 0, 0.08);
 }

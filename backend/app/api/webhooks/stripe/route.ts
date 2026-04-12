@@ -2,7 +2,7 @@ import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { supabase } from '@/lib/supabase';
 import { calculateAllMetrics } from '@/lib/calculations';
-import { checkAndSendAlerts } from '@/lib/alerts';
+import { checkAndSendAlerts, sendRestrictionAlert } from '@/lib/alerts';
 
 export const dynamic = 'force-dynamic';
 
@@ -216,7 +216,15 @@ async function handleDisputeCreated(merchantId: string): Promise<void> {
       vampRatio: calculated.vampRatio,
       mcDisputeRatio: calculated.mcDisputeRatio,
       declineRate: calculated.declineRate,
+      healthScore: calculated.healthScore,
+      totalCharges,
+      totalDisputes: currentDisputes,
+      totalFraudWarnings,
+      totalDeclines,
+      totalAttempts: totalCharges + totalDeclines,
       hasRestrictions,
+      requirements: [],
+      capabilities: [],
       alertPreferences: merchant.alert_preferences ?? {
         email: true,
         slack: false,
@@ -292,7 +300,15 @@ async function handleFraudWarning(merchantId: string): Promise<void> {
       vampRatio: calculated.vampRatio,
       mcDisputeRatio: calculated.mcDisputeRatio,
       declineRate: calculated.declineRate,
+      healthScore: calculated.healthScore,
+      totalCharges,
+      totalDisputes,
+      totalFraudWarnings: currentFraudWarnings,
+      totalDeclines,
+      totalAttempts: totalCharges + totalDeclines,
       hasRestrictions,
+      requirements: [],
+      capabilities: [],
       alertPreferences: merchant.alert_preferences ?? {
         email: true,
         slack: false,
@@ -434,18 +450,51 @@ async function handleAccountUpdated(
     .single();
 
   if (merchant) {
+    const prefs = merchant.alert_preferences ?? {
+      email: true,
+      slack: false,
+      sms: false,
+    };
+
+    // Build human-readable lists for the restriction email template
+    const reqList = requirements?.currently_due ?? [];
+    const capList: string[] = [];
+    if (capabilities) {
+      for (const [name, status] of Object.entries(capabilities)) {
+        if (status === 'restricted' || status === 'pending') {
+          capList.push(`${name}: ${status}`);
+        }
+      }
+    }
+
+    // Send the restriction-specific email
+    if (hasRestrictions) {
+      await sendRestrictionAlert({
+        merchantId,
+        email: merchant.email,
+        requirements: reqList,
+        capabilities: capList,
+        alertPreferences: prefs,
+      });
+    }
+
+    // Also run the general threshold check
     await checkAndSendAlerts({
       merchantId,
       email: merchant.email,
       vampRatio: latestMetrics?.fraud_ratio ?? 0,
       mcDisputeRatio: latestMetrics?.dispute_ratio ?? 0,
       declineRate: latestMetrics?.decline_rate ?? 0,
+      healthScore: latestMetrics?.health_score ?? 100,
+      totalCharges: latestMetrics?.total_charges ?? 0,
+      totalDisputes: latestMetrics?.total_disputes ?? 0,
+      totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
+      totalDeclines: latestMetrics?.total_declines ?? 0,
+      totalAttempts: (latestMetrics?.total_charges ?? 0) + (latestMetrics?.total_declines ?? 0),
       hasRestrictions,
-      alertPreferences: merchant.alert_preferences ?? {
-        email: true,
-        slack: false,
-        sms: false,
-      },
+      requirements: reqList,
+      capabilities: capList,
+      alertPreferences: prefs,
     });
   }
 }

@@ -5,6 +5,8 @@
  * No ML. No guessing. Exact threshold math.
  */
 
+import { supabase } from '@/lib/supabase';
+
 // 2026 Card Network Thresholds
 export const THRESHOLDS = {
   VISA_VAMP: 0.015,           // 1.5% combined fraud + dispute ratio
@@ -246,4 +248,122 @@ export function getTriggeredAlerts(
   }
 
   return alerts;
+}
+
+// --- Feature 1: Trend Direction Indicators ---
+
+export type TrendDirection = 'up' | 'down' | 'flat';
+
+export interface TrendResult {
+  direction: TrendDirection;
+  delta: number;
+  periodDays: number;
+}
+
+type TrendableMetric = 'dispute_ratio' | 'fraud_ratio' | 'decline_rate';
+
+const FLAT_THRESHOLD = 0.0001; // 0.01% — changes smaller than this are "flat"
+
+/**
+ * Calculate the trend direction for a metric over the last N days.
+ * Compares the oldest available value to the most recent value in the window.
+ */
+export async function calculateTrend(
+  merchantId: string,
+  metricName: TrendableMetric,
+  days: number = 7
+): Promise<TrendResult> {
+  const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0];
+
+  const { data: rows } = await supabase
+    .from('daily_metrics')
+    .select('date, dispute_ratio, fraud_ratio, decline_rate')
+    .eq('merchant_id', merchantId)
+    .gte('date', startDate)
+    .order('date', { ascending: true });
+
+  if (!rows || rows.length < 2) {
+    return { direction: 'flat', delta: 0, periodDays: days };
+  }
+
+  const first = rows[0] as Record<string, unknown>;
+  const last = rows[rows.length - 1] as Record<string, unknown>;
+  const oldest = Number(first[metricName]);
+  const newest = Number(last[metricName]);
+  const delta = newest - oldest;
+  const actualDays = rows.length > 1
+    ? Math.round(
+        (new Date(String(last['date'])).getTime() -
+          new Date(String(first['date'])).getTime()) /
+          (24 * 60 * 60 * 1000)
+      )
+    : days;
+
+  let direction: TrendDirection = 'flat';
+  if (delta > FLAT_THRESHOLD) direction = 'up';
+  else if (delta < -FLAT_THRESHOLD) direction = 'down';
+
+  return { direction, delta, periodDays: actualDays || days };
+}
+
+// --- Feature 2: Days Until Threshold ---
+
+export interface ThresholdProjections {
+  daysUntilCMM: number | null;
+  daysUntilVAMP: number | null;
+  daysUntilEnumeration: number | null;
+}
+
+/**
+ * Estimate days until a ratio reaches a given threshold based on current trend.
+ * Returns null if trend is flat/down (not approaching), 0 if already above.
+ */
+export function estimateDaysUntilThreshold(
+  currentRatio: number,
+  trendDelta: number,
+  trendPeriodDays: number,
+  threshold: number
+): number | null {
+  if (currentRatio >= threshold) return 0;
+
+  const dailyRate = trendPeriodDays > 0 ? trendDelta / trendPeriodDays : 0;
+
+  // Not approaching if trend is flat or downward
+  if (dailyRate <= 0) return null;
+
+  const daysRemaining = (threshold - currentRatio) / dailyRate;
+  return Math.ceil(daysRemaining);
+}
+
+/**
+ * Calculate projections for all relevant thresholds.
+ */
+export function calculateProjections(
+  disputeRatio: number,
+  disputeTrend: TrendResult,
+  declineRate: number,
+  declineTrend: TrendResult
+): ThresholdProjections {
+  return {
+    daysUntilCMM: estimateDaysUntilThreshold(
+      disputeRatio,
+      disputeTrend.delta,
+      disputeTrend.periodDays,
+      THRESHOLDS.MASTERCARD_CMM
+    ),
+    daysUntilVAMP: estimateDaysUntilThreshold(
+      disputeRatio,
+      disputeTrend.delta,
+      disputeTrend.periodDays,
+      THRESHOLDS.VISA_VAMP
+    ),
+    daysUntilEnumeration: estimateDaysUntilThreshold(
+      declineRate,
+      declineTrend.delta,
+      declineTrend.periodDays,
+      THRESHOLDS.VISA_ENUMERATION
+    ),
+  };
 }

@@ -1,5 +1,10 @@
 import { supabase } from '@/lib/supabase';
-import { getHealthStatus } from '@/lib/calculations';
+import {
+  getHealthStatus,
+  calculateTrend,
+  calculateProjections,
+} from '@/lib/calculations';
+import { getIndustryBenchmark, getBenchmarkComparison } from '@/lib/benchmarks';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +26,7 @@ export async function GET(
   // Validate merchantId exists
   const { data: merchant, error: merchantError } = await supabase
     .from('merchants')
-    .select('id, stripe_account_id, plan')
+    .select('id, stripe_account_id, plan, mcc_code')
     .eq('id', merchantId)
     .single();
 
@@ -59,14 +64,45 @@ export async function GET(
 
   const healthScore = latestMetrics?.health_score ?? 100;
 
+  // Calculate trend directions for each ratio
+  const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
+    calculateTrend(merchantId, 'dispute_ratio'),
+    calculateTrend(merchantId, 'fraud_ratio'),
+    calculateTrend(merchantId, 'decline_rate'),
+  ]);
+
+  const currentDisputeRatio = Number(latestMetrics?.dispute_ratio ?? 0);
+  const currentDeclineRate = Number(latestMetrics?.decline_rate ?? 0);
+
+  // Calculate days-until-threshold projections
+  const projections = calculateProjections(
+    currentDisputeRatio,
+    disputeTrend,
+    currentDeclineRate,
+    declineTrend
+  );
+
+  // Industry benchmark comparison
+  const mccCode: string = (merchant.mcc_code as string) ?? '5999';
+  const benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
+
   return Response.json({
     merchantId,
     plan: merchant.plan,
     current: {
       date: latestMetrics?.date ?? null,
-      vampRatio: latestMetrics?.fraud_ratio ?? 0,
-      mcDisputeRatio: latestMetrics?.dispute_ratio ?? 0,
-      declineRate: latestMetrics?.decline_rate ?? 0,
+      vampRatio: {
+        current: Number(latestMetrics?.fraud_ratio ?? 0),
+        trend: fraudTrend,
+      },
+      mcDisputeRatio: {
+        current: currentDisputeRatio,
+        trend: disputeTrend,
+      },
+      declineRate: {
+        current: currentDeclineRate,
+        trend: declineTrend,
+      },
       healthScore,
       healthStatus: getHealthStatus(healthScore),
       totalCharges: latestMetrics?.total_charges ?? 0,
@@ -75,6 +111,8 @@ export async function GET(
       totalDeclines: latestMetrics?.total_declines ?? 0,
     },
     activeRestrictions: activeRestrictions ?? 0,
+    projections,
+    benchmark,
     trend: recentMetrics ?? [],
   });
 }

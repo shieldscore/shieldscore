@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+
+# Email template test output
+.email-test-output/
+
+.vercel

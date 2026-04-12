@@ -69,7 +69,15 @@ export async function GET(request: Request): Promise<Response> {
         vampRatio: metrics.vampRatio,
         mcDisputeRatio: metrics.mcDisputeRatio,
         declineRate: metrics.declineRate,
+        healthScore: metrics.healthScore,
+        totalCharges: metrics.totalCharges,
+        totalDisputes: metrics.totalDisputes,
+        totalFraudWarnings: metrics.totalFraudWarnings,
+        totalDeclines: metrics.totalDeclines,
+        totalAttempts: metrics.totalAttempts,
         hasRestrictions: metrics.hasRestrictions,
+        requirements: [],
+        capabilities: [],
         alertPreferences: merchant.alert_preferences ?? {
           email: true,
           slack: false,
@@ -120,6 +128,11 @@ interface SyncResult {
   declineRate: number;
   healthScore: number;
   hasRestrictions: boolean;
+  totalCharges: number;
+  totalDisputes: number;
+  totalFraudWarnings: number;
+  totalDeclines: number;
+  totalAttempts: number;
 }
 
 /**
@@ -223,5 +236,10 @@ async function syncMerchantMetrics(
     declineRate: calculated.declineRate,
     healthScore: calculated.healthScore,
     hasRestrictions,
+    totalCharges,
+    totalDisputes,
+    totalFraudWarnings,
+    totalDeclines,
+    totalAttempts,
   };
 }
