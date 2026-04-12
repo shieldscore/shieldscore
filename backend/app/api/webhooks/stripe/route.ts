@@ -129,11 +129,19 @@ export async function POST(request: Request): Promise<Response> {
 
 /**
  * Extract account ID from event data when event.account is not set.
- * This happens for events on the platform's own account.
+ *
+ * In production (Stripe App installed on a merchant's account), event.account
+ * is always set. During local testing with `stripe trigger`, events come from
+ * our own account so event.account is undefined. This fallback checks the
+ * event payload for an account reference, or uses STRIPE_ACCOUNT_ID env var.
  */
 function getAccountIdFromEvent(event: Stripe.Event): string | null {
   const obj = event.data.object as unknown as Record<string, unknown>;
   if (typeof obj.account === 'string') return obj.account;
+
+  // Fallback for local dev: use the configured account ID
+  if (process.env.STRIPE_ACCOUNT_ID) return process.env.STRIPE_ACCOUNT_ID;
+
   return null;
 }
 
