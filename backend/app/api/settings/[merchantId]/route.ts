@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
 import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
+import { getCorsHeaders, handlePreflight } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,14 +11,8 @@ function isValidMerchantId(id: string): boolean {
   return UUID_RE.test(id) || ACCT_RE.test(id);
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://dashboard.stripe.com',
-  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
-export async function OPTIONS() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+export async function OPTIONS(request: Request) {
+  return handlePreflight(request);
 }
 
 interface SettingsPayload {
@@ -40,13 +35,13 @@ export async function GET(
 ) {
   const auth = verifyRequest(request);
   if (!auth.authenticated) {
-    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+    return unauthorizedResponse(auth.error!, getCorsHeaders(request));
   }
 
   const ip = getClientIp(request);
   const rl = checkRateLimit(ip, '/api/settings', RATE_LIMITS.settings);
   if (!rl.allowed) {
-    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+    return rateLimitResponse(rl.resetAt, getCorsHeaders(request));
   }
 
   const { merchantId } = await params;
@@ -54,7 +49,7 @@ export async function GET(
   if (!isValidMerchantId(merchantId)) {
     return Response.json(
       { error: 'Invalid merchantId format' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(request) }
     );
   }
 
@@ -69,7 +64,7 @@ export async function GET(
     if (!merchant) {
       return Response.json(
         { error: 'Merchant not found' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: getCorsHeaders(request) }
       );
     }
 
@@ -82,14 +77,14 @@ export async function GET(
           sms: false,
         },
       },
-      { headers: CORS_HEADERS }
+      { headers: getCorsHeaders(request) }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[settings GET] Error for merchant ${merchantId}:`, message);
     return Response.json(
       { error: 'Failed to load settings' },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: getCorsHeaders(request) }
     );
   }
 }
@@ -106,13 +101,13 @@ export async function POST(
 ) {
   const auth = verifyRequest(request);
   if (!auth.authenticated) {
-    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+    return unauthorizedResponse(auth.error!, getCorsHeaders(request));
   }
 
   const ip = getClientIp(request);
   const rl = checkRateLimit(ip, '/api/settings', RATE_LIMITS.settings);
   if (!rl.allowed) {
-    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+    return rateLimitResponse(rl.resetAt, getCorsHeaders(request));
   }
 
   const { merchantId } = await params;
@@ -120,7 +115,7 @@ export async function POST(
   if (!isValidMerchantId(merchantId)) {
     return Response.json(
       { error: 'Invalid merchantId format' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(request) }
     );
   }
 
@@ -130,7 +125,7 @@ export async function POST(
   } catch {
     return Response.json(
       { error: 'Invalid JSON body' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(request) }
     );
   }
 
@@ -139,7 +134,7 @@ export async function POST(
     if (!body.phone.startsWith('+') || body.phone.length < 10) {
       return Response.json(
         { error: 'Phone number must start with + and include country code (e.g., +14155551234)' },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400, headers: getCorsHeaders(request) }
       );
     }
   }
@@ -155,7 +150,7 @@ export async function POST(
     if (!merchant) {
       return Response.json(
         { error: 'Merchant not found' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: getCorsHeaders(request) }
       );
     }
 
@@ -190,20 +185,20 @@ export async function POST(
       console.error(`[settings POST] Supabase update failed for ${merchantId}:`, error.message);
       return Response.json(
         { error: 'Failed to update settings' },
-        { status: 503, headers: CORS_HEADERS }
+        { status: 503, headers: getCorsHeaders(request) }
       );
     }
 
     return Response.json(
       { success: true },
-      { headers: CORS_HEADERS }
+      { headers: getCorsHeaders(request) }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[settings POST] Error for merchant ${merchantId}:`, message);
     return Response.json(
       { error: 'Failed to update settings' },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: getCorsHeaders(request) }
     );
   }
 }

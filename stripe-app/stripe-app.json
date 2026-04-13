@@ -17,14 +17,7 @@
     ],
     "content_security_policy": {
       "connect-src": [
-        "https://shieldscore.io/api/metrics/",
-        "https://shieldscore.io/api/onboard/",
-        "https://shieldscore.io/api/alerts/",
-        "https://shieldscore.io/api/disputes/",
-        "https://shieldscore.io/api/velocity/",
-        "https://shieldscore.io/api/settings/",
-        "https://shieldscore.io/api/remediation/",
-        "https://shieldscore.io/api/export/"
+        "https://shieldscore.io/api/"
       ],
       "purpose": "Connects to ShieldScore backend API for health metrics, alerts, velocity, and settings"
     }

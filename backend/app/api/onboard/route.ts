@@ -5,12 +5,8 @@ import { stripe } from '@/lib/stripe';
 import { calculateAllMetrics } from '@/lib/calculations';
 import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
 import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
+import { getCorsHeaders, handlePreflight } from '@/lib/cors';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://dashboard.stripe.com',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, Stripe-Signature',
-};
 
 /**
  * POST /api/onboard
@@ -24,14 +20,14 @@ export async function POST(request: NextRequest) {
   // Auth check
   const auth = verifyRequest(request);
   if (!auth.authenticated) {
-    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+    return unauthorizedResponse(auth.error!, getCorsHeaders(request));
   }
 
   // Rate limit — strict for onboard (5/min)
   const ip = getClientIp(request);
   const rl = checkRateLimit(ip, '/api/onboard', RATE_LIMITS.onboard);
   if (!rl.allowed) {
-    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+    return rateLimitResponse(rl.resetAt, getCorsHeaders(request));
   }
 
   try {
@@ -41,7 +37,7 @@ export async function POST(request: NextRequest) {
     if (!stripeAccountId || typeof stripeAccountId !== 'string') {
       return NextResponse.json(
         { error: 'stripeAccountId required' },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400, headers: getCorsHeaders(request) }
       );
     }
 
@@ -49,7 +45,7 @@ export async function POST(request: NextRequest) {
     if (!/^acct_[a-zA-Z0-9]+$/.test(stripeAccountId)) {
       return NextResponse.json(
         { error: 'Invalid stripeAccountId format' },
-        { status: 400, headers: CORS_HEADERS }
+        { status: 400, headers: getCorsHeaders(request) }
       );
     }
 
@@ -69,7 +65,7 @@ export async function POST(request: NextRequest) {
     if (existing) {
       return NextResponse.json(
         { merchantId: existing.id, status: 'existing' },
-        { headers: CORS_HEADERS }
+        { headers: getCorsHeaders(request) }
       );
     }
 
@@ -103,7 +99,7 @@ export async function POST(request: NextRequest) {
         if (raceWinner) {
           return NextResponse.json(
             { merchantId: raceWinner.id, status: 'existing' },
-            { headers: CORS_HEADERS }
+            { headers: getCorsHeaders(request) }
           );
         }
       }
@@ -121,13 +117,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       { merchantId: merchant.id, status: 'created' },
-      { status: 201, headers: CORS_HEADERS }
+      { status: 201, headers: getCorsHeaders(request) }
     );
   } catch (error) {
     console.error('Onboard error:', error);
     return NextResponse.json(
       { error: 'Onboarding failed' },
-      { status: 500, headers: CORS_HEADERS }
+      { status: 500, headers: getCorsHeaders(request) }
     );
   }
 }
@@ -222,6 +218,6 @@ async function triggerInitialSync(
   );
 }
 
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+export async function OPTIONS(request: Request) {
+  return handlePreflight(request);
 }

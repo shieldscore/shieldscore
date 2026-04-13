@@ -9,6 +9,7 @@ import { getWeeklyComparison } from '@/lib/weekly-comparison';
 import { generateRemediationPlan } from '@/lib/remediation';
 import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
 import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
+import { getCorsHeaders, handlePreflight } from '@/lib/cors';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,14 +19,8 @@ function isValidMerchantId(id: string): boolean {
   return UUID_RE.test(id) || ACCT_RE.test(id);
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': 'https://dashboard.stripe.com',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-};
-
-export async function OPTIONS() {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+export async function OPTIONS(request: Request) {
+  return handlePreflight(request);
 }
 
 /**
@@ -42,14 +37,14 @@ export async function GET(
   // Auth check
   const auth = verifyRequest(request);
   if (!auth.authenticated) {
-    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+    return unauthorizedResponse(auth.error!, getCorsHeaders(request));
   }
 
   // Rate limit
   const ip = getClientIp(request);
   const rl = checkRateLimit(ip, '/api/metrics', RATE_LIMITS.metrics);
   if (!rl.allowed) {
-    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+    return rateLimitResponse(rl.resetAt, getCorsHeaders(request));
   }
 
   const { merchantId } = await params;
@@ -57,7 +52,7 @@ export async function GET(
   if (!isValidMerchantId(merchantId)) {
     return Response.json(
       { error: 'Invalid merchantId format' },
-      { status: 400, headers: CORS_HEADERS }
+      { status: 400, headers: getCorsHeaders(request) }
     );
   }
 
@@ -76,7 +71,7 @@ export async function GET(
     if (merchantError || !merchant) {
       return Response.json(
         { error: 'Merchant not found' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: getCorsHeaders(request) }
       );
     }
 
@@ -208,7 +203,7 @@ export async function GET(
         remediation,
         lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
       },
-      { headers: CORS_HEADERS }
+      { headers: getCorsHeaders(request) }
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -216,7 +211,7 @@ export async function GET(
     const status = isSupabaseError(err) ? 503 : 500;
     return Response.json(
       { error: 'Failed to load metrics' },
-      { status, headers: CORS_HEADERS }
+      { status, headers: getCorsHeaders(request) }
     );
   }
 }
