@@ -3,6 +3,8 @@ import { after } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
 import { calculateAllMetrics } from '@/lib/calculations';
+import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
+import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': 'https://dashboard.stripe.com',
@@ -19,6 +21,19 @@ const CORS_HEADERS = {
  * Body: { stripeAccountId: string, email?: string }
  */
 export async function POST(request: NextRequest) {
+  // Auth check
+  const auth = verifyRequest(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+  }
+
+  // Rate limit — strict for onboard (5/min)
+  const ip = getClientIp(request);
+  const rl = checkRateLimit(ip, '/api/onboard', RATE_LIMITS.onboard);
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+  }
+
   try {
     const body = await request.json();
     const { stripeAccountId, email } = body;

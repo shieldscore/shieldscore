@@ -14,6 +14,16 @@ import { useState, useEffect, useCallback } from 'react';
 import BrandIcon from './brand_icon.svg';
 
 const BACKEND_URL = 'https://shieldscore.io/api';
+// TODO: Move to Stripe Secret Store API for production.
+const API_SECRET_KEY = '066e61cc978c97d28afc6975ebcc5d70d89fc358e6f1624d9047a8755a6d18ce';
+
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(API_SECRET_KEY ? { Authorization: `Bearer ${API_SECRET_KEY}` } : {}),
+    ...extra,
+  };
+}
 
 const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
   const [phone, setPhone] = useState('');
@@ -21,7 +31,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: 'success' | 'caution' | 'critical'; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: 'default' | 'caution' | 'critical'; text: string } | null>(null);
 
   const getAccountId = useCallback(() => {
     return environment?.objectContext?.id || userContext?.account?.id;
@@ -34,7 +44,9 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
         const accountId = getAccountId();
         if (!accountId) return;
 
-        const response = await fetch(`${BACKEND_URL}/settings/${accountId}`);
+        const response = await fetch(`${BACKEND_URL}/settings/${accountId}`, {
+          headers: authHeaders(),
+        });
         if (!response.ok) throw new Error('Failed to fetch settings');
 
         const data = await response.json();
@@ -67,7 +79,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
     try {
       const response = await fetch(`${BACKEND_URL}/settings/${accountId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           phone: phone || null,
           alertPreferences: {
@@ -82,7 +94,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
         throw new Error(data.error || 'Failed to save settings');
       }
 
-      setMessage({ type: 'success', text: 'Settings saved successfully.' });
+      setMessage({ type: 'default', text: 'Settings saved successfully.' });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save settings';
       setMessage({ type: 'critical', text: errorMessage });
@@ -94,7 +106,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
   if (loading) {
     return (
       <ContextView title="Settings" brandColor="#111111" brandIcon={BrandIcon}>
-        <Box css={{ padding: 'large', layout: 'column', alignX: 'center' }}>
+        <Box css={{ padding: 'large', stack: 'y', alignX: 'center' }}>
           <Spinner />
           <Inline css={{ font: 'body', color: 'secondary', marginTop: 'small' }}>
             Loading settings...
@@ -106,23 +118,23 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
 
   return (
     <ContextView title="Settings" brandColor="#111111" brandIcon={BrandIcon}>
-      <Box css={{ padding: 'medium', layout: 'column', gap: 'medium' }}>
+      <Box css={{ padding: 'medium', stack: 'y', gap: 'medium' }}>
         {message && (
           <Banner
             type={message.type}
-            title={message.type === 'success' ? 'Saved' : 'Error'}
+            title={message.type === 'default' ? 'Saved' : 'Error'}
             description={message.text}
             onDismiss={() => setMessage(null)}
           />
         )}
 
-        <Box css={{ layout: 'column', gap: 'small' }}>
+        <Box css={{ stack: 'y', gap: 'small' }}>
           <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>
             ALERT CHANNELS
           </Inline>
 
-          <Box css={{ layout: 'row', alignY: 'center', distribute: 'space-between' }}>
-            <Box css={{ layout: 'column' }}>
+          <Box css={{ stack: 'x', alignY: 'center', distribute: 'space-between' }}>
+            <Box css={{ stack: 'y' }}>
               <Inline css={{ font: 'body', fontWeight: 'semibold' }}>Email alerts</Inline>
               <Inline css={{ font: 'caption', color: 'secondary' }}>
                 Receive alerts via email for all severity levels
@@ -136,8 +148,8 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
 
           <Divider />
 
-          <Box css={{ layout: 'row', alignY: 'center', distribute: 'space-between' }}>
-            <Box css={{ layout: 'column' }}>
+          <Box css={{ stack: 'x', alignY: 'center', distribute: 'space-between' }}>
+            <Box css={{ stack: 'y' }}>
               <Inline css={{ font: 'body', fontWeight: 'semibold' }}>SMS alerts</Inline>
               <Inline css={{ font: 'caption', color: 'secondary' }}>
                 Critical and warning alerts only (Defend plan)
@@ -151,7 +163,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
         </Box>
 
         {smsEnabled && (
-          <Box css={{ layout: 'column', gap: 'xsmall' }}>
+          <Box css={{ stack: 'y', gap: 'xsmall' }}>
             <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>
               PHONE NUMBER
             </Inline>

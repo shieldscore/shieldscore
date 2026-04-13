@@ -6,12 +6,20 @@ import {
 } from '@/lib/calculations';
 import { getBenchmarkComparison } from '@/lib/benchmarks';
 import { getWeeklyComparison } from '@/lib/weekly-comparison';
+import { generateRemediationPlan } from '@/lib/remediation';
+import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
+import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
-// TODO: Lock down to https://dashboard.stripe.com before production deploy
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ACCT_RE = /^acct_[a-zA-Z0-9]{8,}$/;
+function isValidMerchantId(id: string): boolean {
+  return UUID_RE.test(id) || ACCT_RE.test(id);
+}
+
 const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'https://dashboard.stripe.com',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
@@ -28,142 +36,195 @@ export async function OPTIONS() {
  * Includes 7-day sparkline data for trend visualization.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ merchantId: string }> }
 ) {
+  // Auth check
+  const auth = verifyRequest(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+  }
+
+  // Rate limit
+  const ip = getClientIp(request);
+  const rl = checkRateLimit(ip, '/api/metrics', RATE_LIMITS.metrics);
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+  }
+
   const { merchantId } = await params;
 
-  const isStripeAccountId = merchantId.startsWith('acct_');
-  const { data: merchant, error: merchantError } = await supabase
-    .from('merchants')
-    .select('id, stripe_account_id, plan, mcc_code')
-    .eq(isStripeAccountId ? 'stripe_account_id' : 'id', merchantId)
-    .single();
-
-  if (merchantError || !merchant) {
+  if (!isValidMerchantId(merchantId)) {
     return Response.json(
-      { error: 'Merchant not found' },
-      { status: 404, headers: CORS_HEADERS }
+      { error: 'Invalid merchantId format' },
+      { status: 400, headers: CORS_HEADERS }
     );
   }
 
-  const internalId = merchant.id as string;
+  try {
+    const url = new URL(request.url);
+    const historyDaysParam = url.searchParams.get('historyDays');
+    const historyDays = Math.min(Math.max(parseInt(historyDaysParam ?? '30', 10) || 30, 1), 90);
 
-  // Get latest daily metrics
-  const { data: latestMetrics } = await supabase
-    .from('daily_metrics')
-    .select('*')
-    .eq('merchant_id', internalId)
-    .order('date', { ascending: false })
-    .limit(1)
-    .single();
+    const isStripeAccountId = merchantId.startsWith('acct_');
+    const { data: merchant, error: merchantError } = await supabase
+      .from('merchants')
+      .select('id, stripe_account_id, plan, mcc_code')
+      .eq(isStripeAccountId ? 'stripe_account_id' : 'id', merchantId)
+      .single();
 
-  // Get 7-day history for sparkline charts
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0];
+    if (merchantError || !merchant) {
+      return Response.json(
+        { error: 'Merchant not found' },
+        { status: 404, headers: CORS_HEADERS }
+      );
+    }
 
-  const { data: recentMetrics } = await supabase
-    .from('daily_metrics')
-    .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
-    .eq('merchant_id', internalId)
-    .gte('date', sevenDaysAgo)
-    .order('date', { ascending: true });
+    const internalId = merchant.id as string;
 
-  // Get 30-day history for trend charts
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0];
+    // Get latest daily metrics
+    const { data: latestMetrics } = await supabase
+      .from('daily_metrics')
+      .select('*')
+      .eq('merchant_id', internalId)
+      .order('date', { ascending: false })
+      .limit(1)
+      .single();
 
-  const { data: historyMetrics } = await supabase
-    .from('daily_metrics')
-    .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
-    .eq('merchant_id', internalId)
-    .gte('date', thirtyDaysAgo)
-    .order('date', { ascending: true });
+    // Get 7-day history for sparkline charts
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
 
-  // Get active restriction count
-  const { count: activeRestrictions } = await supabase
-    .from('restrictions')
-    .select('id', { count: 'exact', head: true })
-    .eq('merchant_id', internalId)
-    .eq('resolved', false);
+    const { data: recentMetrics } = await supabase
+      .from('daily_metrics')
+      .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
+      .eq('merchant_id', internalId)
+      .gte('date', sevenDaysAgo)
+      .order('date', { ascending: true });
 
-  // Recalculate health score factoring in active restrictions
-  // The stored health_score may not reflect current restriction status
-  let healthScore = latestMetrics?.health_score ?? 100;
-  if ((activeRestrictions ?? 0) > 0) {
-    // Apply -15 restriction penalty if not already baked in
-    // Re-derive from raw ratios to ensure consistency
-    const { calculateHealthScore } = await import('@/lib/calculations');
-    healthScore = calculateHealthScore(
-      Number(latestMetrics?.fraud_ratio ?? 0) + Number(latestMetrics?.dispute_ratio ?? 0),
-      Number(latestMetrics?.dispute_ratio ?? 0),
-      Number(latestMetrics?.decline_rate ?? 0),
-      true
+    // Get history for trend charts (30 or 90 days)
+    const historyStart = new Date(Date.now() - historyDays * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+
+    const { data: historyMetrics } = await supabase
+      .from('daily_metrics')
+      .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
+      .eq('merchant_id', internalId)
+      .gte('date', historyStart)
+      .order('date', { ascending: true });
+
+    // Get active restriction count
+    const { count: activeRestrictions } = await supabase
+      .from('restrictions')
+      .select('id', { count: 'exact', head: true })
+      .eq('merchant_id', internalId)
+      .eq('resolved', false);
+
+    // Recalculate health score factoring in active restrictions
+    let healthScore = latestMetrics?.health_score ?? 100;
+    if ((activeRestrictions ?? 0) > 0) {
+      const { calculateHealthScore } = await import('@/lib/calculations');
+      healthScore = calculateHealthScore(
+        Number(latestMetrics?.fraud_ratio ?? 0) + Number(latestMetrics?.dispute_ratio ?? 0),
+        Number(latestMetrics?.dispute_ratio ?? 0),
+        Number(latestMetrics?.decline_rate ?? 0),
+        true
+      );
+    }
+
+    const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
+      calculateTrend(internalId, 'dispute_ratio'),
+      calculateTrend(internalId, 'fraud_ratio'),
+      calculateTrend(internalId, 'decline_rate'),
+    ]);
+
+    const currentDisputeRatio = Number(latestMetrics?.dispute_ratio ?? 0);
+    const currentFraudRatio = Number(latestMetrics?.fraud_ratio ?? 0);
+    const currentDeclineRate = Number(latestMetrics?.decline_rate ?? 0);
+
+    const projections = calculateProjections(
+      currentDisputeRatio,
+      disputeTrend,
+      currentDeclineRate,
+      declineTrend
     );
-  }
 
-  const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
-    calculateTrend(internalId, 'dispute_ratio'),
-    calculateTrend(internalId, 'fraud_ratio'),
-    calculateTrend(internalId, 'decline_rate'),
-  ]);
+    const mccCode: string = (merchant.mcc_code as string) ?? '5999';
+    const benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
 
-  const currentDisputeRatio = Number(latestMetrics?.dispute_ratio ?? 0);
-  const currentFraudRatio = Number(latestMetrics?.fraud_ratio ?? 0);
-  const currentDeclineRate = Number(latestMetrics?.decline_rate ?? 0);
+    const sparkline = (recentMetrics ?? []).map((row) => ({
+      date: String(row.date),
+      disputeRatio: Number(row.dispute_ratio),
+      fraudRatio: Number(row.fraud_ratio),
+      declineRate: Number(row.decline_rate),
+      healthScore: Number(row.health_score),
+    }));
 
-  const projections = calculateProjections(
-    currentDisputeRatio,
-    disputeTrend,
-    currentDeclineRate,
-    declineTrend
-  );
+    const historyRows = historyMetrics ?? [];
+    const history = {
+      dates: historyRows.map((r) => String(r.date)),
+      disputeRatios: historyRows.map((r) => Number(r.dispute_ratio)),
+      fraudRatios: historyRows.map((r) => Number(r.fraud_ratio)),
+      declineRates: historyRows.map((r) => Number(r.decline_rate)),
+      healthScores: historyRows.map((r) => Number(r.health_score)),
+    };
 
-  const mccCode: string = (merchant.mcc_code as string) ?? '5999';
-  const benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
+    const weeklyComparison = await getWeeklyComparison(internalId);
 
-  // Format sparkline data for the Stripe App charts
-  const sparkline = (recentMetrics ?? []).map((row) => ({
-    date: String(row.date),
-    disputeRatio: Number(row.dispute_ratio),
-    fraudRatio: Number(row.fraud_ratio),
-    declineRate: Number(row.decline_rate),
-    healthScore: Number(row.health_score),
-  }));
-
-  // Format 30-day history for trend charts
-  const historyRows = historyMetrics ?? [];
-  const history = {
-    dates: historyRows.map((r) => String(r.date)),
-    disputeRatios: historyRows.map((r) => Number(r.dispute_ratio)),
-    fraudRatios: historyRows.map((r) => Number(r.fraud_ratio)),
-    declineRates: historyRows.map((r) => Number(r.decline_rate)),
-    healthScores: historyRows.map((r) => Number(r.health_score)),
-  };
-
-  // Week-over-week comparison
-  const weeklyComparison = await getWeeklyComparison(internalId);
-
-  return Response.json(
-    {
+    const fullPlan = generateRemediationPlan({
+      disputeRatio: currentDisputeRatio,
+      fraudRatio: currentFraudRatio,
+      declineRate: currentDeclineRate,
       healthScore,
-      healthStatus: getHealthStatus(healthScore),
-      disputeRatio: { current: currentDisputeRatio, trend: disputeTrend },
-      fraudRatio: { current: currentFraudRatio, trend: fraudTrend },
-      declineRate: { current: currentDeclineRate, trend: declineTrend },
-      totalCharges: latestMetrics?.total_charges ?? 0,
-      totalDisputes: latestMetrics?.total_disputes ?? 0,
-      totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
-      activeRestrictions: activeRestrictions ?? 0,
-      projections,
-      benchmark,
-      sparkline,
-      history,
-      weeklyComparison,
-      lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
-    },
-    { headers: CORS_HEADERS }
+      totalDisputes: Number(latestMetrics?.total_disputes ?? 0),
+      totalCharges: Number(latestMetrics?.total_charges ?? 0),
+      hasRestrictions: (activeRestrictions ?? 0) > 0,
+    });
+
+    const remediation = {
+      severity: fullPlan.severity,
+      actionCount: fullPlan.actions.length,
+      topAction: fullPlan.actions.length > 0 ? fullPlan.actions[0].title : null,
+    };
+
+    return Response.json(
+      {
+        healthScore,
+        healthStatus: getHealthStatus(healthScore),
+        disputeRatio: { current: currentDisputeRatio, trend: disputeTrend },
+        fraudRatio: { current: currentFraudRatio, trend: fraudTrend },
+        declineRate: { current: currentDeclineRate, trend: declineTrend },
+        totalCharges: latestMetrics?.total_charges ?? 0,
+        totalDisputes: latestMetrics?.total_disputes ?? 0,
+        totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
+        activeRestrictions: activeRestrictions ?? 0,
+        projections,
+        benchmark,
+        sparkline,
+        history,
+        weeklyComparison,
+        remediation,
+        lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
+      },
+      { headers: CORS_HEADERS }
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[metrics] Error for merchant ${merchantId}:`, message);
+    const status = isSupabaseError(err) ? 503 : 500;
+    return Response.json(
+      { error: 'Failed to load metrics' },
+      { status, headers: CORS_HEADERS }
+    );
+  }
+}
+
+function isSupabaseError(err: unknown): boolean {
+  return err instanceof Error && (
+    err.message.includes('fetch failed') ||
+    err.message.includes('ECONNREFUSED') ||
+    err.message.includes('supabase')
   );
 }

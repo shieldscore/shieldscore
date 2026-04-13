@@ -1,25 +1,25 @@
-import { stripe } from '@/lib/stripe';
 import { supabase } from '@/lib/supabase';
-import { calculateAllMetrics } from '@/lib/calculations';
-import { checkAndSendAlerts, sendVelocityAlert } from '@/lib/alerts';
-import { detectAnomalies } from '@/lib/velocity';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Daily Sync Cron Job
+ * Daily Sync Dispatcher
  *
  * Runs once per day (triggered by Vercel Cron or external scheduler).
- * For each merchant:
- * 1. Pulls disputes, charges, and early fraud warnings from Stripe (rolling 30-day window)
- * 2. Calculates VAMP ratio, MC dispute ratio, decline rate, and health score
- * 3. Upserts today's daily_metrics row
- * 4. Checks alert thresholds and sends notifications if needed
+ * Instead of processing all merchants in a single function invocation
+ * (which would timeout on Vercel's 10s free tier limit), this endpoint:
+ *
+ * 1. Fetches the list of all merchant IDs
+ * 2. Fires off a separate function call for each merchant
+ * 3. Returns immediately with the dispatch summary
+ *
+ * Each merchant sync runs as its own /api/cron/sync-merchant/[id] invocation
+ * with its own 10-second timeout budget.
  *
  * Protected by CRON_SECRET to prevent unauthorized invocations.
  */
 export async function GET(request: Request): Promise<Response> {
-  // Verify cron secret to prevent unauthorized access
+  // Verify cron secret
   const authHeader = request.headers.get('authorization');
   if (
     process.env.CRON_SECRET &&
@@ -28,234 +28,87 @@ export async function GET(request: Request): Promise<Response> {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const today = new Date().toISOString().split('T')[0];
-  const thirtyDaysAgo = Math.floor(
-    (Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000
-  );
-
-  // Fetch all merchants
+  // Fetch all merchant IDs
   const { data: merchants, error: merchantError } = await supabase
     .from('merchants')
-    .select('id, stripe_account_id, email, phone, alert_preferences');
+    .select('id');
 
   if (merchantError || !merchants) {
-    console.error('Failed to fetch merchants:', merchantError);
+    console.error('[daily-sync] Failed to fetch merchants:', merchantError);
     return Response.json(
       { error: 'Failed to fetch merchants' },
       { status: 500 }
     );
   }
 
-  const results: Array<{
-    merchantId: string;
-    stripeAccountId: string;
-    status: 'success' | 'error';
-    healthScore?: number;
-    error?: string;
-  }> = [];
+  if (merchants.length === 0) {
+    return Response.json({
+      date: new Date().toISOString().split('T')[0],
+      totalMerchants: 0,
+      dispatched: 0,
+    });
+  }
 
-  for (const merchant of merchants) {
-    try {
-      const metrics = await syncMerchantMetrics(
-        merchant.id,
-        merchant.stripe_account_id,
-        thirtyDaysAgo,
-        today
-      );
+  // Build the base URL for the sync-merchant endpoint
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://shieldscore.io';
+  const cronSecret = process.env.CRON_SECRET || '';
 
-      // Check and send alerts
-      const prefs = merchant.alert_preferences ?? {
-        email: true,
-        slack: false,
-        sms: false,
-      };
+  // Dispatch all merchant syncs concurrently.
+  // We use fire-and-forget fetch calls — we don't wait for each to complete.
+  // This keeps the dispatcher itself well within the timeout budget.
+  const dispatched: string[] = [];
+  const failed: Array<{ merchantId: string; error: string }> = [];
 
-      await checkAndSendAlerts({
-        merchantId: merchant.id,
-        email: merchant.email,
-        phone: merchant.phone ?? null,
-        vampRatio: metrics.vampRatio,
-        mcDisputeRatio: metrics.mcDisputeRatio,
-        declineRate: metrics.declineRate,
-        healthScore: metrics.healthScore,
-        totalCharges: metrics.totalCharges,
-        totalDisputes: metrics.totalDisputes,
-        totalFraudWarnings: metrics.totalFraudWarnings,
-        totalDeclines: metrics.totalDeclines,
-        totalAttempts: metrics.totalAttempts,
-        hasRestrictions: metrics.hasRestrictions,
-        requirements: [],
-        capabilities: [],
-        alertPreferences: prefs,
-      });
+  // Dispatch in batches of 20 to avoid overwhelming the network
+  const BATCH_SIZE = 20;
+  for (let i = 0; i < merchants.length; i += BATCH_SIZE) {
+    const batch = merchants.slice(i, i + BATCH_SIZE);
 
-      // Velocity anomaly detection
-      const anomalyReport = await detectAnomalies(merchant.id);
-      if (anomalyReport.overallStatus !== 'normal') {
-        await sendVelocityAlert(
-          merchant.id,
-          merchant.email,
-          merchant.phone ?? null,
-          prefs,
-          anomalyReport
-        );
+    const results = await Promise.allSettled(
+      batch.map(async (merchant) => {
+        const url = `${appUrl}/api/cron/sync-merchant/${merchant.id}`;
+        const res = await fetch(url, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${cronSecret}`,
+          },
+        });
+
+        if (!res.ok) {
+          const body = await res.text().catch(() => 'unknown');
+          throw new Error(`HTTP ${res.status}: ${body.slice(0, 200)}`);
+        }
+
+        return merchant.id;
+      })
+    );
+
+    for (let j = 0; j < results.length; j++) {
+      const result = results[j];
+      const merchantId = batch[j].id;
+      if (result.status === 'fulfilled') {
+        dispatched.push(merchantId);
+      } else {
+        const msg = result.reason instanceof Error
+          ? result.reason.message
+          : String(result.reason);
+        console.error(`[daily-sync] Failed to dispatch ${merchantId}:`, msg);
+        failed.push({ merchantId, error: msg });
       }
-
-      results.push({
-        merchantId: merchant.id,
-        stripeAccountId: merchant.stripe_account_id,
-        status: 'success',
-        healthScore: metrics.healthScore,
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      console.error(
-        `Failed to sync merchant ${merchant.stripe_account_id}:`,
-        message
-      );
-      results.push({
-        merchantId: merchant.id,
-        stripeAccountId: merchant.stripe_account_id,
-        status: 'error',
-        error: message,
-      });
     }
   }
 
-  const successCount = results.filter((r) => r.status === 'success').length;
-  const errorCount = results.filter((r) => r.status === 'error').length;
+  const today = new Date().toISOString().split('T')[0];
 
   console.log(
-    `Daily sync complete: ${successCount} succeeded, ${errorCount} failed out of ${merchants.length} merchants`
+    `[daily-sync] Dispatched ${dispatched.length}/${merchants.length} merchants, ${failed.length} failed`
   );
 
   return Response.json({
     date: today,
     totalMerchants: merchants.length,
-    successCount,
-    errorCount,
-    results,
+    dispatched: dispatched.length,
+    failed: failed.length,
+    errors: failed.length > 0 ? failed : undefined,
   });
-}
-
-interface SyncResult {
-  vampRatio: number;
-  mcDisputeRatio: number;
-  declineRate: number;
-  healthScore: number;
-  hasRestrictions: boolean;
-  totalCharges: number;
-  totalDisputes: number;
-  totalFraudWarnings: number;
-  totalDeclines: number;
-  totalAttempts: number;
-}
-
-/**
- * Sync a single merchant's metrics from Stripe API.
- *
- * Uses auto-pagination to count all records in the 30-day window.
- * Stripe's list endpoints return most recent first, so we paginate
- * until we hit records older than our window.
- */
-async function syncMerchantMetrics(
-  merchantId: string,
-  stripeAccountId: string,
-  createdAfter: number,
-  today: string
-): Promise<SyncResult> {
-  // Count disputes in the rolling 30-day window
-  let totalDisputes = 0;
-  for await (const _dispute of stripe.disputes.list(
-    { created: { gte: createdAfter }, limit: 100 },
-    { stripeAccount: stripeAccountId }
-  )) {
-    totalDisputes++;
-  }
-
-  // Count settled charges in the rolling 30-day window
-  let totalCharges = 0;
-  for await (const charge of stripe.charges.list(
-    { created: { gte: createdAfter }, limit: 100 },
-    { stripeAccount: stripeAccountId }
-  )) {
-    if (charge.status === 'succeeded') {
-      totalCharges++;
-    }
-  }
-
-  // Count early fraud warnings (TC40 reports) in the rolling 30-day window
-  let totalFraudWarnings = 0;
-  for await (const _warning of stripe.radar.earlyFraudWarnings.list(
-    { created: { gte: createdAfter }, limit: 100 },
-    { stripeAccount: stripeAccountId }
-  )) {
-    totalFraudWarnings++;
-  }
-
-  // Count failed charges (declines) for decline rate calculation
-  let totalDeclines = 0;
-  for await (const charge of stripe.charges.list(
-    { created: { gte: createdAfter }, limit: 100 },
-    { stripeAccount: stripeAccountId }
-  )) {
-    if (charge.status === 'failed') {
-      totalDeclines++;
-    }
-  }
-
-  // Check for active restrictions
-  const { count: restrictionCount } = await supabase
-    .from('restrictions')
-    .select('id', { count: 'exact', head: true })
-    .eq('merchant_id', merchantId)
-    .eq('resolved', false);
-
-  const hasRestrictions = (restrictionCount ?? 0) > 0;
-
-  const totalAttempts = totalCharges + totalDeclines;
-
-  const calculated = calculateAllMetrics({
-    totalCharges,
-    totalDisputes,
-    totalFraudWarnings,
-    totalDeclines,
-    totalAttempts,
-    hasRestrictions,
-  });
-
-  // Upsert today's metrics
-  const { error: upsertError } = await supabase.from('daily_metrics').upsert(
-    {
-      merchant_id: merchantId,
-      date: today,
-      total_charges: totalCharges,
-      total_disputes: totalDisputes,
-      total_fraud_warnings: totalFraudWarnings,
-      total_refunds: 0, // TODO: count refunds when needed
-      total_declines: totalDeclines,
-      dispute_ratio: calculated.mcDisputeRatio,
-      fraud_ratio: calculated.vampRatio,
-      decline_rate: calculated.declineRate,
-      health_score: calculated.healthScore,
-    },
-    { onConflict: 'merchant_id,date' }
-  );
-
-  if (upsertError) {
-    throw new Error(`Failed to upsert daily metrics: ${upsertError.message}`);
-  }
-
-  return {
-    vampRatio: calculated.vampRatio,
-    mcDisputeRatio: calculated.mcDisputeRatio,
-    declineRate: calculated.declineRate,
-    healthScore: calculated.healthScore,
-    hasRestrictions,
-    totalCharges,
-    totalDisputes,
-    totalFraudWarnings,
-    totalDeclines,
-    totalAttempts,
-  };
 }

@@ -1,9 +1,27 @@
 import { stripe } from '@/lib/stripe';
 import { supabase } from '@/lib/supabase';
 import { getDisputeGuidance } from '@/lib/dispute-guidance';
+import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
+import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 import type Stripe from 'stripe';
 
 export const dynamic = 'force-dynamic';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const ACCT_RE = /^acct_[a-zA-Z0-9]{8,}$/;
+function isValidMerchantId(id: string): boolean {
+  return UUID_RE.test(id) || ACCT_RE.test(id);
+}
+
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': 'https://dashboard.stripe.com',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
 
 interface DisputeItem {
   id: string;
@@ -30,11 +48,30 @@ interface DisputeItem {
  * ratio impact per dispute, and response guidance.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ merchantId: string }> }
 ) {
+  const auth = verifyRequest(request);
+  if (!auth.authenticated) {
+    return unauthorizedResponse(auth.error!, CORS_HEADERS);
+  }
+
+  const ip = getClientIp(request);
+  const rl = checkRateLimit(ip, '/api/disputes', RATE_LIMITS.disputes);
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetAt, CORS_HEADERS);
+  }
+
   const { merchantId } = await params;
 
+  if (!isValidMerchantId(merchantId)) {
+    return Response.json(
+      { error: 'Invalid merchantId format' },
+      { status: 400, headers: CORS_HEADERS }
+    );
+  }
+
+  try {
   // Look up merchant (accepts both Supabase UUID and Stripe account ID)
   const isStripeAccountId = merchantId.startsWith('acct_');
   const { data: merchant, error: merchantError } = await supabase
@@ -44,7 +81,7 @@ export async function GET(
     .single();
 
   if (merchantError || !merchant) {
-    return Response.json({ error: 'Merchant not found' }, { status: 404 });
+    return Response.json({ error: 'Merchant not found' }, { status: 404, headers: CORS_HEADERS });
   }
 
   // Get latest total_charges for ratio impact calculation
@@ -143,9 +180,16 @@ export async function GET(
     }
   }
 
-  return Response.json({
-    merchantId,
-    totalCharges,
-    disputes,
-  });
+  return Response.json(
+    { merchantId, totalCharges, disputes },
+    { headers: CORS_HEADERS }
+  );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`[disputes] Error for merchant ${merchantId}:`, message);
+    return Response.json(
+      { error: 'Failed to load disputes' },
+      { status: 500, headers: CORS_HEADERS }
+    );
+  }
 }

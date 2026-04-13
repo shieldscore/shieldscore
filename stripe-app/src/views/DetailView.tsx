@@ -13,6 +13,15 @@ interface Alert {
 }
 
 const BACKEND_URL = 'https://shieldscore.io/api';
+// TODO: Move to Stripe Secret Store API for production.
+const API_SECRET_KEY = '066e61cc978c97d28afc6975ebcc5d70d89fc358e6f1624d9047a8755a6d18ce';
+
+function authHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(API_SECRET_KEY ? { Authorization: `Bearer ${API_SECRET_KEY}` } : {}),
+  };
+}
 
 const DetailView = ({ userContext, environment }: ExtensionContextValue) => {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -23,7 +32,9 @@ const DetailView = ({ userContext, environment }: ExtensionContextValue) => {
       const accountId = environment?.objectContext?.id || userContext?.account?.id;
       if (!accountId) return;
 
-      const response = await fetch(`${BACKEND_URL}/alerts/${accountId}?limit=10`);
+      const response = await fetch(`${BACKEND_URL}/alerts/${accountId}?limit=10`, {
+        headers: authHeaders(),
+      });
       if (!response.ok) throw new Error('Failed to fetch alerts');
 
       const data = await response.json();

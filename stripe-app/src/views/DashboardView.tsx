@@ -12,6 +12,9 @@ import {
   LineChart,
   Accordion,
   AccordionItem,
+  Link,
+  FocusView,
+  Select,
 } from '@stripe/ui-extension-sdk/ui';
 import type { ExtensionContextValue } from '@stripe/ui-extension-sdk/context';
 import { getDashboardUserEmail } from '@stripe/ui-extension-sdk/utils';
@@ -100,6 +103,28 @@ interface VelocityReport {
   summary: string;
 }
 
+interface RemediationSummary {
+  severity: 'none' | 'advisory' | 'urgent' | 'critical';
+  actionCount: number;
+  topAction: string | null;
+}
+
+interface RemediationAction {
+  priority: 1 | 2 | 3;
+  category: string;
+  title: string;
+  description: string;
+  stripeLink: string | null;
+}
+
+interface RemediationPlan {
+  severity: 'none' | 'advisory' | 'urgent' | 'critical';
+  title: string;
+  summary: string;
+  actions: RemediationAction[];
+  generatedAt: string;
+}
+
 interface MetricsResponse {
   healthScore: number;
   healthStatus: 'green' | 'yellow' | 'red';
@@ -115,6 +140,7 @@ interface MetricsResponse {
   sparkline: SparklinePoint[];
   history: HistoryData;
   weeklyComparison: WeeklyComparisonData;
+  remediation?: RemediationSummary;
   lastUpdated: string;
 }
 
@@ -158,6 +184,19 @@ interface DisputeItem {
 
 const BACKEND_URL = 'https://shieldscore.io/api';
 
+// TODO: Move to Stripe Secret Store API for production.
+// Hardcoded to match backend API_SECRET_KEY. The Stripe App CSP restricts
+// which domains can be contacted, so this key adds defense-in-depth.
+const API_SECRET_KEY = '066e61cc978c97d28afc6975ebcc5d70d89fc358e6f1624d9047a8755a6d18ce';
+
+function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ...(API_SECRET_KEY ? { Authorization: `Bearer ${API_SECRET_KEY}` } : {}),
+    ...extra,
+  };
+}
+
 const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -167,19 +206,26 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [expandedDispute, setExpandedDispute] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [velocity, setVelocity] = useState<VelocityReport | null>(null);
+  const [historyDays, setHistoryDays] = useState<'30' | '90'>('30');
+  const [remediationPlan, setRemediationPlan] = useState<RemediationPlan | null>(null);
+  const [showRemediation, setShowRemediation] = useState(false);
+
+  const getAccountId = useCallback(() => {
+    return environment?.objectContext?.id || userContext?.account?.id;
+  }, [environment, userContext]);
 
   const fetchMetrics = useCallback(async () => {
     try {
       setLoading(true);
-      const accountId = environment?.objectContext?.id || userContext?.account?.id;
+      const accountId = getAccountId();
       if (!accountId) {
         setError('Could not determine Stripe account ID');
         return;
       }
 
       // Try to fetch metrics
-      let response = await fetch(`${BACKEND_URL}/metrics/${accountId}`, {
-        headers: { 'Content-Type': 'application/json' },
+      let response = await fetch(`${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`, {
+        headers: authHeaders(),
       });
 
       // If merchant not found, onboard them first
@@ -201,16 +247,9 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
           // Signature not available in dev mode — skip
         }
 
-        const onboardHeaders: Record<string, string> = {
-          'Content-Type': 'application/json',
-        };
-        if (signature) {
-          onboardHeaders['Stripe-Signature'] = signature;
-        }
-
         const onboardResponse = await fetch(`${BACKEND_URL}/onboard`, {
           method: 'POST',
-          headers: onboardHeaders,
+          headers: authHeaders(signature ? { 'Stripe-Signature': signature } : undefined),
           body: JSON.stringify({ stripeAccountId: accountId, email }),
         });
 
@@ -222,8 +261,8 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
         await new Promise((resolve) => setTimeout(resolve, 3000));
 
         // Retry fetching metrics
-        response = await fetch(`${BACKEND_URL}/metrics/${accountId}`, {
-          headers: { 'Content-Type': 'application/json' },
+        response = await fetch(`${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`, {
+          headers: authHeaders(),
         });
       }
 
@@ -237,10 +276,10 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       // Fetch recent disputes and velocity in parallel
       const [disputeRes, velocityRes] = await Promise.all([
         fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5`, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
         }).catch(() => null),
         fetch(`${BACKEND_URL}/velocity/${accountId}`, {
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders(),
         }).catch(() => null),
       ]);
 
@@ -255,17 +294,52 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
+      // Keep existing metrics on error — show stale data with warning
+      // Only set error message, don't clear metrics
       setError(`Unable to load health data: ${msg}`);
     } finally {
       setLoading(false);
     }
-  }, [environment, userContext]);
+  }, [getAccountId, historyDays]);
 
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
 
+  const fetchRemediationPlan = useCallback(async () => {
+    const accountId = getAccountId();
+    if (!accountId) return;
+    try {
+      const res = await fetch(`${BACKEND_URL}/remediation/${accountId}`, {
+        headers: authHeaders(),
+      });
+      if (res.ok) {
+        const plan: RemediationPlan = await res.json();
+        setRemediationPlan(plan);
+        setShowRemediation(true);
+      }
+    } catch {
+      // Non-critical
+    }
+  }, [getAccountId]);
+
   const fmt = (ratio: number): string => `${(ratio * 100).toFixed(2)}%`;
+
+  /** Sample every Nth data point so chart x-axis labels don't overlap */
+  const sampleHistory = (dates: string[], values: number[]) => {
+    const step = dates.length <= 7 ? 1 : dates.length <= 30 ? 5 : 10;
+    const sampled: Array<{ date: string; value: number }> = [];
+    for (let i = 0; i < dates.length; i += step) {
+      const d = new Date(dates[i] + 'T00:00:00');
+      sampled.push({ date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), value: values[i] });
+    }
+    const last = dates.length - 1;
+    if (last % step !== 0) {
+      const d = new Date(dates[last] + 'T00:00:00');
+      sampled.push({ date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), value: values[last] });
+    }
+    return sampled;
+  };
 
   const scoreBadge = (status: string) => {
     if (status === 'green') return <Badge type="positive">Healthy</Badge>;
@@ -307,8 +381,8 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
     );
   }
 
-  // ── Error ────────────────────────────────────
-  if (error || !metrics) {
+  // ── Error with no prior data ──────────────────
+  if (!metrics && (error || !loading)) {
     return (
       <ContextView title="ShieldScore" brandIcon={BrandIcon}>
         <Box css={{ padding: 'medium', stack: 'y', gap: 'medium' }}>
@@ -320,6 +394,20 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
           <Button type="primary" onPress={fetchMetrics}>
             Retry
           </Button>
+        </Box>
+      </ContextView>
+    );
+  }
+
+  // ── No data yet (shouldn't normally reach here) ──
+  if (!metrics) {
+    return (
+      <ContextView title="ShieldScore" brandIcon={BrandIcon}>
+        <Box css={{ padding: 'xlarge', stack: 'y', alignX: 'center', gap: 'medium' }}>
+          <Spinner size="large" />
+          <Inline css={{ font: 'body', color: 'secondary' }}>
+            Loading health data...
+          </Inline>
         </Box>
       </ContextView>
     );
@@ -353,6 +441,22 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
         ) : undefined
       }
     >
+      {/* ── STALE DATA WARNING ─────────────────── */}
+      {error && (
+        <Box css={{ padding: 'small' }}>
+          <Banner
+            type="caution"
+            title="Data may be stale"
+            description="Unable to refresh. Showing last known data."
+            actions={
+              <Button onPress={fetchMetrics} type="secondary" size="small">
+                Retry
+              </Button>
+            }
+          />
+        </Box>
+      )}
+
       {/* ── HEALTH SCORE ─────────────────────── */}
       <Box css={{ padding: 'medium' }}>
         <Box css={{ stack: 'x', distribute: 'space-between', alignY: 'center' }}>
@@ -384,25 +488,35 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
 
       <Divider />
 
-      {/* ── 30-DAY TRENDS ────────────────────── */}
+      {/* ── TREND CHARTS ────────────────────── */}
       {metrics.history.dates.length > 1 && (
         <>
           <Box css={{ padding: 'medium' }}>
-            <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center', marginBottom: 'small' }}>
-              <Icon name="growth" size="small" />
-              <Inline css={{ font: 'subheading', fontWeight: 'bold' }}>
-                30-Day Trends
-              </Inline>
+            <Box css={{ stack: 'x', distribute: 'space-between', alignY: 'center', marginBottom: 'small' }}>
+              <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center' }}>
+                <Icon name="growth" size="small" />
+                <Inline css={{ font: 'subheading', fontWeight: 'bold' }}>
+                  {historyDays === '30' ? '30' : '90'}-Day Trends
+                </Inline>
+              </Box>
+              <Select
+                value={historyDays}
+                onChange={(e) => setHistoryDays(e.target.value as '30' | '90')}
+                size="small"
+              >
+                <option value="30">30 days</option>
+                <option value="90">90 days</option>
+              </Select>
             </Box>
 
             <Inline css={{ font: 'caption', fontWeight: 'semibold', marginBottom: 'xsmall' }}>
               Dispute Ratio
             </Inline>
             <LineChart
-              data={metrics.history.dates.flatMap((date, i) => [
-                { date, value: metrics.history.disputeRatios[i] * 100, series: 'Dispute %' },
-                { date, value: 1.0, series: 'CMM (1.0%)' },
-                { date, value: 1.5, series: 'VAMP (1.5%)' },
+              data={sampleHistory(metrics.history.dates, metrics.history.disputeRatios.map((r) => r * 100)).flatMap((pt) => [
+                { date: pt.date, value: pt.value, series: 'Dispute %' },
+                { date: pt.date, value: 1.0, series: 'CMM (1.0%)' },
+                { date: pt.date, value: 1.5, series: 'VAMP (1.5%)' },
               ])}
               x="date"
               y="value"
@@ -418,9 +532,9 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
                 Health Score
               </Inline>
               <LineChart
-                data={metrics.history.dates.map((date, i) => ({
-                  date,
-                  score: metrics.history.healthScores[i],
+                data={sampleHistory(metrics.history.dates, metrics.history.healthScores).map((pt) => ({
+                  date: pt.date,
+                  score: pt.value,
                 }))}
                 x="date"
                 y="score"
@@ -428,6 +542,17 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
                 grid="y"
                 tooltip
               />
+            </Box>
+
+            <Box css={{ marginTop: 'small', alignX: 'end' }}>
+              <Link
+                href={`${BACKEND_URL}/export/${getAccountId()}?days=${historyDays}&token=${API_SECRET_KEY}`}
+                target="_blank"
+                external
+                type="secondary"
+              >
+                Export CSV
+              </Link>
             </Box>
           </Box>
 
@@ -529,6 +654,146 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
           </AccordionItem>
         </Accordion>
       </Box>
+
+      {/* ── REMEDIATION PLAN ─────────────────── */}
+      {metrics.remediation && metrics.remediation.severity !== 'none' && (
+        <>
+          <Divider />
+          <Box css={{ padding: 'medium' }}>
+            {metrics.remediation.severity === 'critical' ? (
+              <Banner
+                type="critical"
+                title="Immediate action required"
+                description={`${metrics.remediation.actionCount} corrective actions identified. Top priority: ${metrics.remediation.topAction}.`}
+                actions={
+                  <Button type="destructive" onPress={fetchRemediationPlan}>
+                    View plan
+                  </Button>
+                }
+              />
+            ) : metrics.remediation.severity === 'urgent' ? (
+              <Box css={{ stack: 'y', gap: 'small' }}>
+                <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center' }}>
+                  <Icon name="warning" size="small" />
+                  <Inline css={{ font: 'subheading', fontWeight: 'bold' }}>
+                    Action Required
+                  </Inline>
+                  <Badge type="warning">{metrics.remediation.actionCount} actions</Badge>
+                </Box>
+                {metrics.remediation.topAction && (
+                  <Inline css={{ font: 'caption' }}>
+                    Top priority: {metrics.remediation.topAction}
+                  </Inline>
+                )}
+                <Button type="secondary" size="small" onPress={fetchRemediationPlan}>
+                  View full plan
+                </Button>
+              </Box>
+            ) : (
+              <Box css={{ stack: 'y', gap: 'xsmall' }}>
+                <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center' }}>
+                  <Icon name="info" size="small" />
+                  <Inline css={{ font: 'body' }}>
+                    {metrics.remediation.topAction}
+                  </Inline>
+                </Box>
+                <Button type="secondary" size="small" onPress={fetchRemediationPlan}>
+                  View recommendations
+                </Button>
+              </Box>
+            )}
+          </Box>
+        </>
+      )}
+
+      {/* ── REMEDIATION FOCUS VIEW ────────────── */}
+      {remediationPlan && (
+        <FocusView
+          title="Remediation Plan"
+          shown={showRemediation}
+          setShown={setShowRemediation}
+        >
+          <Box css={{ padding: 'medium', stack: 'y', gap: 'medium' }}>
+            <Banner
+              type={remediationPlan.severity === 'critical' ? 'critical' : remediationPlan.severity === 'urgent' ? 'caution' : 'default'}
+              title={remediationPlan.title}
+              description={remediationPlan.summary}
+            />
+
+            {/* Priority 1 — Immediate */}
+            {remediationPlan.actions.filter((a) => a.priority === 1).length > 0 && (
+              <Box css={{ stack: 'y', gap: 'small' }}>
+                <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>
+                  DO IMMEDIATELY
+                </Inline>
+                {remediationPlan.actions.filter((a) => a.priority === 1).map((action) => (
+                  <Box key={action.title} css={{ padding: 'small', backgroundColor: 'container', stack: 'y', gap: 'xxsmall' }}>
+                    <Inline css={{ font: 'body', fontWeight: 'bold' }}>
+                      {action.title}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: 'secondary' }}>
+                      {action.description}
+                    </Inline>
+                    {action.stripeLink && (
+                      <Link href={action.stripeLink} target="_blank" external type="secondary">
+                        Open in Stripe
+                      </Link>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {/* Priority 2 — This week */}
+            {remediationPlan.actions.filter((a) => a.priority === 2).length > 0 && (
+              <Box css={{ stack: 'y', gap: 'small' }}>
+                <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>
+                  DO THIS WEEK
+                </Inline>
+                {remediationPlan.actions.filter((a) => a.priority === 2).map((action) => (
+                  <Box key={action.title} css={{ padding: 'small', backgroundColor: 'container', stack: 'y', gap: 'xxsmall' }}>
+                    <Inline css={{ font: 'body', fontWeight: 'bold' }}>
+                      {action.title}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: 'secondary' }}>
+                      {action.description}
+                    </Inline>
+                    {action.stripeLink && (
+                      <Link href={action.stripeLink} target="_blank" external type="secondary">
+                        Open in Stripe
+                      </Link>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {/* Priority 3 — Ongoing */}
+            {remediationPlan.actions.filter((a) => a.priority === 3).length > 0 && (
+              <Box css={{ stack: 'y', gap: 'small' }}>
+                <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>
+                  ONGOING
+                </Inline>
+                {remediationPlan.actions.filter((a) => a.priority === 3).map((action) => (
+                  <Box key={action.title} css={{ padding: 'small', backgroundColor: 'container', stack: 'y', gap: 'xxsmall' }}>
+                    <Inline css={{ font: 'body', fontWeight: 'bold' }}>
+                      {action.title}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: 'secondary' }}>
+                      {action.description}
+                    </Inline>
+                    {action.stripeLink && (
+                      <Link href={action.stripeLink} target="_blank" external type="secondary">
+                        Open in Stripe
+                      </Link>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Box>
+        </FocusView>
+      )}
 
       {/* ── PROJECTIONS ──────────────────────── */}
       {hasProjections && (

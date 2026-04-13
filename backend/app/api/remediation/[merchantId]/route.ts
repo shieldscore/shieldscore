@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { detectAnomalies } from '@/lib/velocity';
+import { generateRemediationPlan } from '@/lib/remediation';
 import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
 import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 
@@ -22,9 +22,9 @@ export async function OPTIONS() {
 }
 
 /**
- * GET /api/velocity/[merchantId]
+ * GET /api/remediation/[merchantId]
  *
- * Returns velocity anomaly detection report using Z-score analysis.
+ * Returns a full remediation plan based on the merchant's current metrics.
  */
 export async function GET(
   request: Request,
@@ -36,7 +36,7 @@ export async function GET(
   }
 
   const ip = getClientIp(request);
-  const rl = checkRateLimit(ip, '/api/velocity', RATE_LIMITS.velocity);
+  const rl = checkRateLimit(ip, '/api/remediation', RATE_LIMITS.remediation);
   if (!rl.allowed) {
     return rateLimitResponse(rl.resetAt, CORS_HEADERS);
   }
@@ -65,14 +65,38 @@ export async function GET(
       );
     }
 
-    const report = await detectAnomalies(merchant.id as string);
+    const internalId = merchant.id as string;
 
-    return Response.json(report, { headers: CORS_HEADERS });
+    const { data: latestMetrics } = await supabase
+      .from('daily_metrics')
+      .select('dispute_ratio, fraud_ratio, decline_rate, health_score, total_disputes, total_charges')
+      .eq('merchant_id', internalId)
+      .order('date', { ascending: false })
+      .limit(1)
+      .single();
+
+    const { count: restrictionCount } = await supabase
+      .from('restrictions')
+      .select('id', { count: 'exact', head: true })
+      .eq('merchant_id', internalId)
+      .eq('resolved', false);
+
+    const plan = generateRemediationPlan({
+      disputeRatio: Number(latestMetrics?.dispute_ratio ?? 0),
+      fraudRatio: Number(latestMetrics?.fraud_ratio ?? 0),
+      declineRate: Number(latestMetrics?.decline_rate ?? 0),
+      healthScore: Number(latestMetrics?.health_score ?? 100),
+      totalDisputes: Number(latestMetrics?.total_disputes ?? 0),
+      totalCharges: Number(latestMetrics?.total_charges ?? 0),
+      hasRestrictions: (restrictionCount ?? 0) > 0,
+    });
+
+    return Response.json(plan, { headers: CORS_HEADERS });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`[velocity] Error for merchant ${merchantId}:`, message);
+    console.error(`[remediation] Error for merchant ${merchantId}:`, message);
     return Response.json(
-      { error: 'Failed to load velocity data' },
+      { error: 'Failed to generate remediation plan' },
       { status: 500, headers: CORS_HEADERS }
     );
   }

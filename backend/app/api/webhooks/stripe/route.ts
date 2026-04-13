@@ -3,6 +3,7 @@ import { stripe } from '@/lib/stripe';
 import { supabase } from '@/lib/supabase';
 import { calculateAllMetrics } from '@/lib/calculations';
 import { checkAndSendAlerts, sendRestrictionAlert } from '@/lib/alerts';
+import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,13 @@ export const dynamic = 'force-dynamic';
  * 3. Idempotent — check stripe_event_id before processing
  */
 export async function POST(request: Request): Promise<Response> {
+  // Rate limit webhooks to prevent abuse (100/min per IP)
+  const ip = getClientIp(request);
+  const rl = checkRateLimit(ip, '/api/webhooks', RATE_LIMITS.webhooks);
+  if (!rl.allowed) {
+    return rateLimitResponse(rl.resetAt);
+  }
+
   const rawBody = await request.text();
   const sig = request.headers.get('stripe-signature');
 
