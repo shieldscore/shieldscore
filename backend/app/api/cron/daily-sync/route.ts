@@ -1,7 +1,8 @@
 import { stripe } from '@/lib/stripe';
 import { supabase } from '@/lib/supabase';
 import { calculateAllMetrics } from '@/lib/calculations';
-import { checkAndSendAlerts } from '@/lib/alerts';
+import { checkAndSendAlerts, sendVelocityAlert } from '@/lib/alerts';
+import { detectAnomalies } from '@/lib/velocity';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ export async function GET(request: Request): Promise<Response> {
   // Fetch all merchants
   const { data: merchants, error: merchantError } = await supabase
     .from('merchants')
-    .select('id, stripe_account_id, email, alert_preferences');
+    .select('id, stripe_account_id, email, phone, alert_preferences');
 
   if (merchantError || !merchants) {
     console.error('Failed to fetch merchants:', merchantError);
@@ -63,9 +64,16 @@ export async function GET(request: Request): Promise<Response> {
       );
 
       // Check and send alerts
+      const prefs = merchant.alert_preferences ?? {
+        email: true,
+        slack: false,
+        sms: false,
+      };
+
       await checkAndSendAlerts({
         merchantId: merchant.id,
         email: merchant.email,
+        phone: merchant.phone ?? null,
         vampRatio: metrics.vampRatio,
         mcDisputeRatio: metrics.mcDisputeRatio,
         declineRate: metrics.declineRate,
@@ -78,12 +86,20 @@ export async function GET(request: Request): Promise<Response> {
         hasRestrictions: metrics.hasRestrictions,
         requirements: [],
         capabilities: [],
-        alertPreferences: merchant.alert_preferences ?? {
-          email: true,
-          slack: false,
-          sms: false,
-        },
+        alertPreferences: prefs,
       });
+
+      // Velocity anomaly detection
+      const anomalyReport = await detectAnomalies(merchant.id);
+      if (anomalyReport.overallStatus !== 'normal') {
+        await sendVelocityAlert(
+          merchant.id,
+          merchant.email,
+          merchant.phone ?? null,
+          prefs,
+          anomalyReport
+        );
+      }
 
       results.push({
         merchantId: merchant.id,

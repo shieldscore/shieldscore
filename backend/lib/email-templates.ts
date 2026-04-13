@@ -39,6 +39,17 @@ export interface DeclineRateWarningData {
   merchantEmail: string;
 }
 
+export interface VelocitySpikeData {
+  currentDeclines: number;
+  averageDeclines: number;
+  zScore: number;
+  currentCharges: number;
+  averageCharges: number;
+  chargeZScore: number;
+  severity: 'elevated' | 'critical';
+  merchantEmail: string;
+}
+
 export interface DailyDigestData {
   healthScore: number;
   disputeRatio: number;
@@ -328,6 +339,47 @@ export function dailyDigest(data: DailyDigestData): EmailOutput {
 
   return {
     subject: `Daily report. Health: ${data.healthScore}/100`,
+    html: wrap(topColor, body),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Template F: Velocity Spike
+// ---------------------------------------------------------------------------
+
+export function velocitySpike(data: VelocitySpikeData): EmailOutput {
+  const isCritical = data.severity === 'critical';
+  const topColor = isCritical ? borderColor('critical') : borderColor('warning');
+
+  const declineAbnormal = data.zScore > 2;
+  const chargeAbnormal = data.chargeZScore > 2;
+
+  let anomalyHtml = '';
+  if (declineAbnormal) {
+    anomalyHtml += `
+      <p style="margin:8px 0;"><strong>Declines:</strong> <span style="font-family:'Courier New',Courier,monospace;font-weight:600;">${data.currentDeclines}</span> today vs <span style="font-family:'Courier New',Courier,monospace;">${Math.round(data.averageDeclines)}</span> daily average (${data.zScore.toFixed(1)} standard deviations above normal).</p>`;
+  }
+  if (chargeAbnormal) {
+    anomalyHtml += `
+      <p style="margin:8px 0;"><strong>Charges:</strong> <span style="font-family:'Courier New',Courier,monospace;font-weight:600;">${data.currentCharges}</span> today vs <span style="font-family:'Courier New',Courier,monospace;">${Math.round(data.averageCharges)}</span> daily average (${data.chargeZScore.toFixed(1)} standard deviations above normal).</p>`;
+  }
+
+  const body = `
+    <p style="margin:0 0 8px 0;font-size:18px;font-weight:600;">Unusual transaction pattern detected</p>
+    <p style="margin:0 0 16px 0;">ShieldScore detected activity that deviates significantly from your 30-day baseline.</p>
+    ${anomalyHtml}
+    <p style="margin:16px 0 8px 0;font-weight:600;">Recommended actions:</p>
+    <ol style="margin:0 0 0 0;padding-left:20px;">
+      <li style="margin-bottom:4px;">Check for card-testing bot activity in your Radar logs.</li>
+      <li style="margin-bottom:4px;">Review recent declined transactions for patterns.</li>
+      <li style="margin-bottom:4px;">Consider enabling CAPTCHA or rate limiting on your checkout.</li>
+    </ol>
+    ${button('Open Stripe Dashboard', 'https://dashboard.stripe.com/test/radar')}`;
+
+  return {
+    subject: isCritical
+      ? 'Critical: Unusual transaction spike detected'
+      : 'Warning: Unusual transaction pattern detected',
     html: wrap(topColor, body),
   };
 }

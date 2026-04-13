@@ -8,6 +8,16 @@ import {
   declineRateWarning,
   type EmailOutput,
 } from './email-templates';
+import { sendSMS } from './twilio';
+import {
+  thresholdSMS,
+  restrictionSMS,
+  vampCriticalSMS,
+  declineRateSMS,
+  velocitySpikeSMS,
+} from './sms-templates';
+import { velocitySpike } from './email-templates';
+import type { AnomalyReport } from './velocity';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,6 +32,7 @@ interface AlertPreferences {
 interface AlertInput {
   merchantId: string;
   email: string | null;
+  phone: string | null;
   vampRatio: number;
   mcDisputeRatio: number;
   declineRate: number;
@@ -40,6 +51,7 @@ interface AlertInput {
 interface RestrictionAlertInput {
   merchantId: string;
   email: string | null;
+  phone: string | null;
   requirements: string[];
   capabilities: string[];
   alertPreferences: AlertPreferences;
@@ -121,6 +133,44 @@ function resolveTemplate(
 }
 
 // ---------------------------------------------------------------------------
+// SMS resolver
+// ---------------------------------------------------------------------------
+
+/**
+ * Pick the right SMS message based on the triggered alert and input data.
+ */
+function resolveSMSMessage(
+  alertType: string,
+  severity: 'info' | 'warning' | 'critical',
+  input: AlertInput
+): string | null {
+  // Only send SMS for warning or critical alerts
+  if (severity === 'info') return null;
+
+  if (alertType === 'threshold_warning' && severity === 'critical' && input.vampRatio >= THRESHOLDS.VISA_VAMP) {
+    return vampCriticalSMS(input.vampRatio);
+  }
+
+  if (alertType === 'threshold_warning' && input.declineRate >= ALERT_THRESHOLDS.DECLINE_WARNING) {
+    return declineRateSMS(input.declineRate);
+  }
+
+  if (alertType === 'restriction_detected') {
+    return restrictionSMS();
+  }
+
+  if (alertType === 'threshold_warning') {
+    const maxRatio = Math.max(input.vampRatio, input.mcDisputeRatio);
+    const thresholdName = maxRatio >= ALERT_THRESHOLDS.PENALTY_ZONE
+      ? 'ECM/VAMP'
+      : 'CMM';
+    return thresholdSMS(maxRatio, thresholdName);
+  }
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Core alert functions
 // ---------------------------------------------------------------------------
 
@@ -185,6 +235,19 @@ export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
       }
     }
 
+    // Send SMS alert (warning and critical only, if enabled)
+    if (
+      input.alertPreferences.sms &&
+      input.phone &&
+      (alert.severity === 'warning' || alert.severity === 'critical')
+    ) {
+      const smsMessage = resolveSMSMessage(alert.type, alert.severity, input);
+      if (smsMessage) {
+        const sent = await sendSMS(input.phone, smsMessage);
+        if (sent) deliveredVia.push('sms');
+      }
+    }
+
     // Store alert in database
     await supabase.from('alerts').insert({
       merchant_id: input.merchantId,
@@ -202,7 +265,9 @@ export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
  * when account.updated fires with new requirements or capability changes.
  */
 export async function sendRestrictionAlert(input: RestrictionAlertInput): Promise<void> {
-  if (!input.email || !input.alertPreferences.email) return;
+  const hasEmail = input.email && input.alertPreferences.email;
+  const hasSMS = input.phone && input.alertPreferences.sms;
+  if (!hasEmail && !hasSMS) return;
   if (input.requirements.length === 0 && input.capabilities.length === 0) return;
 
   // Deduplicate
@@ -216,15 +281,24 @@ export async function sendRestrictionAlert(input: RestrictionAlertInput): Promis
 
   if (existing && existing.length > 0) return;
 
-  const template = restrictionDetected({
-    requirements: input.requirements,
-    capabilities: input.capabilities,
-    merchantEmail: input.email,
-  });
-
   const deliveredVia: string[] = [];
-  const sent = await sendAlertEmail(input.email, template);
-  if (sent) deliveredVia.push('email');
+
+  // Send email
+  if (hasEmail && input.email) {
+    const template = restrictionDetected({
+      requirements: input.requirements,
+      capabilities: input.capabilities,
+      merchantEmail: input.email,
+    });
+    const sent = await sendAlertEmail(input.email, template);
+    if (sent) deliveredVia.push('email');
+  }
+
+  // Send SMS (restrictions are always critical)
+  if (hasSMS && input.phone) {
+    const sent = await sendSMS(input.phone, restrictionSMS());
+    if (sent) deliveredVia.push('sms');
+  }
 
   await supabase.from('alerts').insert({
     merchant_id: input.merchantId,
@@ -232,6 +306,76 @@ export async function sendRestrictionAlert(input: RestrictionAlertInput): Promis
     severity: 'critical' as const,
     title: 'Stripe flagged your account',
     message: `Requirements: ${input.requirements.join(', ')}. Capabilities: ${input.capabilities.join(', ')}.`,
+    delivered_via: deliveredVia,
+  });
+}
+
+/**
+ * Send a velocity spike alert when anomaly detection finds unusual patterns.
+ * Called from the daily-sync cron job after running detectAnomalies().
+ */
+export async function sendVelocityAlert(
+  merchantId: string,
+  email: string | null,
+  phone: string | null,
+  alertPreferences: AlertPreferences,
+  report: AnomalyReport
+): Promise<void> {
+  if (report.overallStatus === 'normal') return;
+
+  const hasEmail = email && alertPreferences.email;
+  const hasSMS = phone && alertPreferences.sms;
+  if (!hasEmail && !hasSMS) return;
+
+  const alertSeverity: 'warning' | 'critical' =
+    report.overallStatus === 'critical' ? 'critical' : 'warning';
+  const templateSeverity: 'elevated' | 'critical' =
+    report.overallStatus === 'critical' ? 'critical' : 'elevated';
+
+  // Deduplicate
+  const { data: existing } = await supabase
+    .from('alerts')
+    .select('id')
+    .eq('merchant_id', merchantId)
+    .eq('alert_type', 'velocity_spike')
+    .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    .limit(1);
+
+  if (existing && existing.length > 0) return;
+
+  const deliveredVia: string[] = [];
+
+  // Send email
+  if (hasEmail && email) {
+    const template = velocitySpike({
+      currentDeclines: report.declineVelocity.current,
+      averageDeclines: report.declineVelocity.mean,
+      zScore: report.declineVelocity.zScore,
+      currentCharges: report.chargeVelocity.current,
+      averageCharges: report.chargeVelocity.mean,
+      chargeZScore: report.chargeVelocity.zScore,
+      severity: templateSeverity,
+      merchantEmail: email,
+    });
+    const sent = await sendAlertEmail(email, template);
+    if (sent) deliveredVia.push('email');
+  }
+
+  // Send SMS
+  if (hasSMS && phone) {
+    const sent = await sendSMS(
+      phone,
+      velocitySpikeSMS(report.declineVelocity.current, report.declineVelocity.mean)
+    );
+    if (sent) deliveredVia.push('sms');
+  }
+
+  await supabase.from('alerts').insert({
+    merchant_id: merchantId,
+    alert_type: 'velocity_spike',
+    severity: alertSeverity,
+    title: `Unusual transaction pattern detected (${report.overallStatus})`,
+    message: report.summary,
     delivered_via: deliveredVia,
   });
 }

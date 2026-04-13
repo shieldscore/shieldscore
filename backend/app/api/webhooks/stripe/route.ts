@@ -73,7 +73,7 @@ export async function POST(request: Request): Promise<Response> {
   // Find or skip merchant
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('id, email, alert_preferences')
+    .select('id, email, phone, alert_preferences')
     .eq('stripe_account_id', stripeAccountId)
     .single();
 
@@ -205,7 +205,7 @@ async function handleDisputeCreated(merchantId: string): Promise<void> {
   // Check and send alerts
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('email, alert_preferences')
+    .select('email, phone, alert_preferences')
     .eq('id', merchantId)
     .single();
 
@@ -213,6 +213,7 @@ async function handleDisputeCreated(merchantId: string): Promise<void> {
     await checkAndSendAlerts({
       merchantId,
       email: merchant.email,
+      phone: merchant.phone ?? null,
       vampRatio: calculated.vampRatio,
       mcDisputeRatio: calculated.mcDisputeRatio,
       declineRate: calculated.declineRate,
@@ -289,7 +290,7 @@ async function handleFraudWarning(merchantId: string): Promise<void> {
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('email, alert_preferences')
+    .select('email, phone, alert_preferences')
     .eq('id', merchantId)
     .single();
 
@@ -297,6 +298,7 @@ async function handleFraudWarning(merchantId: string): Promise<void> {
     await checkAndSendAlerts({
       merchantId,
       email: merchant.email,
+      phone: merchant.phone ?? null,
       vampRatio: calculated.vampRatio,
       mcDisputeRatio: calculated.mcDisputeRatio,
       declineRate: calculated.declineRate,
@@ -445,7 +447,7 @@ async function handleAccountUpdated(
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('email, alert_preferences')
+    .select('email, phone, alert_preferences')
     .eq('id', merchantId)
     .single();
 
@@ -467,11 +469,12 @@ async function handleAccountUpdated(
       }
     }
 
-    // Send the restriction-specific email
+    // Send the restriction-specific alert (email + SMS)
     if (hasRestrictions) {
       await sendRestrictionAlert({
         merchantId,
         email: merchant.email,
+        phone: merchant.phone ?? null,
         requirements: reqList,
         capabilities: capList,
         alertPreferences: prefs,
@@ -482,6 +485,7 @@ async function handleAccountUpdated(
     await checkAndSendAlerts({
       merchantId,
       email: merchant.email,
+      phone: merchant.phone ?? null,
       vampRatio: latestMetrics?.fraud_ratio ?? 0,
       mcDisputeRatio: latestMetrics?.dispute_ratio ?? 0,
       declineRate: latestMetrics?.decline_rate ?? 0,

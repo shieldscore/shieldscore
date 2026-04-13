@@ -9,6 +9,7 @@ import {
   Icon,
   Spinner,
   Sparkline,
+  LineChart,
   Accordion,
   AccordionItem,
 } from '@stripe/ui-extension-sdk/ui';
@@ -45,6 +46,60 @@ interface SparklinePoint {
   healthScore: number;
 }
 
+interface HistoryData {
+  dates: string[];
+  disputeRatios: number[];
+  fraudRatios: number[];
+  declineRates: number[];
+  healthScores: number[];
+}
+
+interface MetricChange {
+  delta: number;
+  direction: 'up' | 'down' | 'flat';
+}
+
+interface WeekStats {
+  avgDisputeRatio: number;
+  avgFraudRatio: number;
+  avgDeclineRate: number;
+  avgHealthScore: number;
+  totalDisputes: number;
+  totalCharges: number;
+}
+
+interface WeeklyComparisonData {
+  thisWeek: WeekStats;
+  lastWeek: WeekStats;
+  changes: {
+    disputeRatio: MetricChange;
+    fraudRatio: MetricChange;
+    declineRate: MetricChange;
+    healthScore: MetricChange;
+  };
+  summary: string;
+  hasEnoughData: boolean;
+}
+
+interface VelocityMetric {
+  mean: number;
+  stddev: number;
+  current: number;
+  zScore: number;
+  isAnomaly: boolean;
+}
+
+interface VelocityReport {
+  chargeVelocity: VelocityMetric;
+  declineVelocity: VelocityMetric;
+  declineRate: {
+    current: number;
+    isAboveEnumeration: boolean;
+  };
+  overallStatus: 'normal' | 'elevated' | 'critical';
+  summary: string;
+}
+
 interface MetricsResponse {
   healthScore: number;
   healthStatus: 'green' | 'yellow' | 'red';
@@ -58,6 +113,8 @@ interface MetricsResponse {
   projections: Projections;
   benchmark: Benchmark;
   sparkline: SparklinePoint[];
+  history: HistoryData;
+  weeklyComparison: WeeklyComparisonData;
   lastUpdated: string;
 }
 
@@ -99,8 +156,7 @@ interface DisputeItem {
   };
 }
 
-// TODO: Change to https://shieldscore.io/api before deploying
-const BACKEND_URL = 'http://localhost:3000/api';
+const BACKEND_URL = 'https://shieldscore.io/api';
 
 const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
@@ -110,6 +166,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [disputes, setDisputes] = useState<DisputeItem[]>([]);
   const [expandedDispute, setExpandedDispute] = useState<string | null>(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [velocity, setVelocity] = useState<VelocityReport | null>(null);
 
   const fetchMetrics = useCallback(async () => {
     try {
@@ -177,20 +234,28 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       setLastChecked(new Date());
       setError(null);
 
-      // Fetch recent disputes
-      try {
-        const disputeRes = await fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5`, {
+      // Fetch recent disputes and velocity in parallel
+      const [disputeRes, velocityRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5`, {
           headers: { 'Content-Type': 'application/json' },
-        });
-        if (disputeRes.ok) {
-          const disputeData = await disputeRes.json();
-          setDisputes(disputeData.disputes || []);
-        }
-      } catch {
-        // Disputes are non-critical — don't block the dashboard
+        }).catch(() => null),
+        fetch(`${BACKEND_URL}/velocity/${accountId}`, {
+          headers: { 'Content-Type': 'application/json' },
+        }).catch(() => null),
+      ]);
+
+      if (disputeRes?.ok) {
+        const disputeData = await disputeRes.json();
+        setDisputes(disputeData.disputes || []);
+      }
+
+      if (velocityRes?.ok) {
+        const velocityData: VelocityReport = await velocityRes.json();
+        setVelocity(velocityData);
       }
     } catch (err) {
-      setError('Unable to load health data. Please try again.');
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Unable to load health data: ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -318,6 +383,57 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       </Box>
 
       <Divider />
+
+      {/* ── 30-DAY TRENDS ────────────────────── */}
+      {metrics.history.dates.length > 1 && (
+        <>
+          <Box css={{ padding: 'medium' }}>
+            <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center', marginBottom: 'small' }}>
+              <Icon name="growth" size="small" />
+              <Inline css={{ font: 'subheading', fontWeight: 'bold' }}>
+                30-Day Trends
+              </Inline>
+            </Box>
+
+            <Inline css={{ font: 'caption', fontWeight: 'semibold', marginBottom: 'xsmall' }}>
+              Dispute Ratio
+            </Inline>
+            <LineChart
+              data={metrics.history.dates.flatMap((date, i) => [
+                { date, value: metrics.history.disputeRatios[i] * 100, series: 'Dispute %' },
+                { date, value: 1.0, series: 'CMM (1.0%)' },
+                { date, value: 1.5, series: 'VAMP (1.5%)' },
+              ])}
+              x="date"
+              y="value"
+              color="series"
+              axis="both"
+              grid="y"
+              legend
+              tooltip
+            />
+
+            <Box css={{ marginTop: 'medium' }}>
+              <Inline css={{ font: 'caption', fontWeight: 'semibold', marginBottom: 'xsmall' }}>
+                Health Score
+              </Inline>
+              <LineChart
+                data={metrics.history.dates.map((date, i) => ({
+                  date,
+                  score: metrics.history.healthScores[i],
+                }))}
+                x="date"
+                y="score"
+                axis="both"
+                grid="y"
+                tooltip
+              />
+            </Box>
+          </Box>
+
+          <Divider />
+        </>
+      )}
 
       {/* ── COMPLIANCE THRESHOLDS ─────────────── */}
       <Box css={{ paddingX: 'medium', paddingTop: 'medium' }}>
@@ -467,6 +583,52 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
 
       <Divider />
 
+      {/* ── VELOCITY STATUS ──────────────────── */}
+      {velocity && (
+        <>
+          {velocity.overallStatus === 'normal' ? (
+            <Box css={{ paddingX: 'medium', paddingY: 'small' }}>
+              <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center' }}>
+                <Icon name="shieldCheck" size="small" css={{ fill: 'success' }} />
+                <Inline css={{ font: 'body' }}>Velocity: Normal</Inline>
+                <Badge type="positive">OK</Badge>
+              </Box>
+            </Box>
+          ) : (
+            <Box css={{ padding: 'medium' }}>
+              <Banner
+                type={velocity.overallStatus === 'critical' ? 'critical' : 'caution'}
+                title={`Velocity: ${velocity.overallStatus === 'critical' ? 'Critical' : 'Elevated'}`}
+                description={velocity.summary}
+              />
+              <Box css={{ stack: 'y', gap: 'xxsmall', marginTop: 'small' }}>
+                {velocity.declineVelocity.isAnomaly && (
+                  <Box css={{ stack: 'x', distribute: 'space-between' }}>
+                    <Inline css={{ font: 'caption' }}>Declines today</Inline>
+                    <Inline css={{ font: 'caption', fontWeight: 'bold' }}>
+                      {velocity.declineVelocity.current} (avg: {Math.round(velocity.declineVelocity.mean)})
+                    </Inline>
+                  </Box>
+                )}
+                {velocity.chargeVelocity.isAnomaly && (
+                  <Box css={{ stack: 'x', distribute: 'space-between' }}>
+                    <Inline css={{ font: 'caption' }}>Charges today</Inline>
+                    <Inline css={{ font: 'caption', fontWeight: 'bold' }}>
+                      {velocity.chargeVelocity.current} (avg: {Math.round(velocity.chargeVelocity.mean)})
+                    </Inline>
+                  </Box>
+                )}
+                <Inline css={{ font: 'caption', color: 'secondary', marginTop: 'xsmall' }}>
+                  Review Radar logs for unusual patterns. Consider enabling CAPTCHA or rate limiting.
+                </Inline>
+              </Box>
+            </Box>
+          )}
+
+          <Divider />
+        </>
+      )}
+
       {/* ── 30-DAY STATS ─────────────────────── */}
       <Box css={{ padding: 'medium' }}>
         <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center', marginBottom: 'small' }}>
@@ -498,6 +660,109 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       </Box>
 
       <Divider />
+
+      {/* ── WEEK OVER WEEK ───────────────────── */}
+      {metrics.weeklyComparison && (
+        <>
+          <Box css={{ padding: 'medium' }}>
+            <Box css={{ stack: 'x', gap: 'xsmall', alignY: 'center', marginBottom: 'small' }}>
+              <Icon name="clock" size="small" />
+              <Inline css={{ font: 'subheading', fontWeight: 'bold' }}>
+                Week over Week
+              </Inline>
+            </Box>
+
+            {!metrics.weeklyComparison.hasEnoughData ? (
+              <Inline css={{ font: 'body', color: 'secondary' }}>
+                Not enough data for weekly comparison
+              </Inline>
+            ) : (
+              <Box css={{ stack: 'y', gap: 'small' }}>
+                {/* Column headers */}
+                <Box css={{ stack: 'x', distribute: 'space-between' }}>
+                  <Inline css={{ font: 'caption', color: 'secondary' }}> </Inline>
+                  <Box css={{ stack: 'x', gap: 'large' }}>
+                    <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>This Week</Inline>
+                    <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>Last Week</Inline>
+                    <Inline css={{ font: 'caption', fontWeight: 'semibold' }}>Change</Inline>
+                  </Box>
+                </Box>
+
+                {/* Dispute Ratio */}
+                <Box css={{ stack: 'x', distribute: 'space-between', alignY: 'center' }}>
+                  <Inline css={{ font: 'caption' }}>Dispute ratio</Inline>
+                  <Box css={{ stack: 'x', gap: 'large', alignY: 'center' }}>
+                    <Inline css={{ font: 'caption', fontWeight: 'bold' }}>
+                      {fmt(metrics.weeklyComparison.thisWeek.avgDisputeRatio)}
+                    </Inline>
+                    <Inline css={{ font: 'caption' }}>
+                      {fmt(metrics.weeklyComparison.lastWeek.avgDisputeRatio)}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: metrics.weeklyComparison.changes.disputeRatio.direction === 'down' ? 'success' : metrics.weeklyComparison.changes.disputeRatio.direction === 'up' ? 'critical' : 'secondary' }}>
+                      {metrics.weeklyComparison.changes.disputeRatio.direction === 'up' ? '\u2191' : metrics.weeklyComparison.changes.disputeRatio.direction === 'down' ? '\u2193' : '\u2192'} {fmt(Math.abs(metrics.weeklyComparison.changes.disputeRatio.delta))}
+                    </Inline>
+                  </Box>
+                </Box>
+
+                {/* Fraud Ratio */}
+                <Box css={{ stack: 'x', distribute: 'space-between', alignY: 'center' }}>
+                  <Inline css={{ font: 'caption' }}>Fraud ratio</Inline>
+                  <Box css={{ stack: 'x', gap: 'large', alignY: 'center' }}>
+                    <Inline css={{ font: 'caption', fontWeight: 'bold' }}>
+                      {fmt(metrics.weeklyComparison.thisWeek.avgFraudRatio)}
+                    </Inline>
+                    <Inline css={{ font: 'caption' }}>
+                      {fmt(metrics.weeklyComparison.lastWeek.avgFraudRatio)}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: metrics.weeklyComparison.changes.fraudRatio.direction === 'down' ? 'success' : metrics.weeklyComparison.changes.fraudRatio.direction === 'up' ? 'critical' : 'secondary' }}>
+                      {metrics.weeklyComparison.changes.fraudRatio.direction === 'up' ? '\u2191' : metrics.weeklyComparison.changes.fraudRatio.direction === 'down' ? '\u2193' : '\u2192'} {fmt(Math.abs(metrics.weeklyComparison.changes.fraudRatio.delta))}
+                    </Inline>
+                  </Box>
+                </Box>
+
+                {/* Decline Rate */}
+                <Box css={{ stack: 'x', distribute: 'space-between', alignY: 'center' }}>
+                  <Inline css={{ font: 'caption' }}>Decline rate</Inline>
+                  <Box css={{ stack: 'x', gap: 'large', alignY: 'center' }}>
+                    <Inline css={{ font: 'caption', fontWeight: 'bold' }}>
+                      {fmt(metrics.weeklyComparison.thisWeek.avgDeclineRate)}
+                    </Inline>
+                    <Inline css={{ font: 'caption' }}>
+                      {fmt(metrics.weeklyComparison.lastWeek.avgDeclineRate)}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: metrics.weeklyComparison.changes.declineRate.direction === 'down' ? 'success' : metrics.weeklyComparison.changes.declineRate.direction === 'up' ? 'critical' : 'secondary' }}>
+                      {metrics.weeklyComparison.changes.declineRate.direction === 'up' ? '\u2191' : metrics.weeklyComparison.changes.declineRate.direction === 'down' ? '\u2193' : '\u2192'} {fmt(Math.abs(metrics.weeklyComparison.changes.declineRate.delta))}
+                    </Inline>
+                  </Box>
+                </Box>
+
+                {/* Health Score */}
+                <Box css={{ stack: 'x', distribute: 'space-between', alignY: 'center' }}>
+                  <Inline css={{ font: 'caption' }}>Health score</Inline>
+                  <Box css={{ stack: 'x', gap: 'large', alignY: 'center' }}>
+                    <Inline css={{ font: 'caption', fontWeight: 'bold' }}>
+                      {metrics.weeklyComparison.thisWeek.avgHealthScore}
+                    </Inline>
+                    <Inline css={{ font: 'caption' }}>
+                      {metrics.weeklyComparison.lastWeek.avgHealthScore}
+                    </Inline>
+                    <Inline css={{ font: 'caption', color: metrics.weeklyComparison.changes.healthScore.direction === 'up' ? 'success' : metrics.weeklyComparison.changes.healthScore.direction === 'down' ? 'critical' : 'secondary' }}>
+                      {metrics.weeklyComparison.changes.healthScore.direction === 'up' ? '\u2191' : metrics.weeklyComparison.changes.healthScore.direction === 'down' ? '\u2193' : '\u2192'} {Math.abs(metrics.weeklyComparison.changes.healthScore.delta)}pts
+                    </Inline>
+                  </Box>
+                </Box>
+
+                {/* Summary */}
+                <Inline css={{ font: 'caption', color: 'secondary', marginTop: 'xsmall' }}>
+                  {metrics.weeklyComparison.summary}
+                </Inline>
+              </Box>
+            )}
+          </Box>
+
+          <Divider />
+        </>
+      )}
 
       {/* ── RECENT DISPUTES ──────────────────── */}
       <Box css={{ padding: 'medium' }}>

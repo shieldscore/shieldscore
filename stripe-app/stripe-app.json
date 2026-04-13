@@ -2,7 +2,7 @@
   "$schema": "https://stripe.com/stripe-app.schema.json",
   "id": "com.shieldscore.app",
   "name": "ShieldScore",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "icon": "./icon.png",
   "ui_extension": {
     "views": [
@@ -17,11 +17,14 @@
     ],
     "content_security_policy": {
       "connect-src": [
-        "https://shieldscore.io/api/metrics",
-        "https://shieldscore.io/api/onboard",
-        "https://shieldscore.io/api/alerts"
+        "https://shieldscore.io/api/metrics/",
+        "https://shieldscore.io/api/onboard/",
+        "https://shieldscore.io/api/alerts/",
+        "https://shieldscore.io/api/disputes/",
+        "https://shieldscore.io/api/velocity/",
+        "https://shieldscore.io/api/settings/"
       ],
-      "purpose": "Connects to ShieldScore backend API for health metrics"
+      "purpose": "Connects to ShieldScore backend API for health metrics, alerts, velocity, and settings"
     }
   },
   "extensions": null,

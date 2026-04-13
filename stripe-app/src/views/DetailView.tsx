@@ -12,8 +12,7 @@ interface Alert {
   created_at: string;
 }
 
-// TODO: Change to https://shieldscore.io/api before deploying
-const BACKEND_URL = 'http://localhost:3000/api';
+const BACKEND_URL = 'https://shieldscore.io/api';
 
 const DetailView = ({ userContext, environment }: ExtensionContextValue) => {
   const [alerts, setAlerts] = useState<Alert[]>([]);

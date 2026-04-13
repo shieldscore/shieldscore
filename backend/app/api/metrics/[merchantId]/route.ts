@@ -5,6 +5,7 @@ import {
   calculateProjections,
 } from '@/lib/calculations';
 import { getBenchmarkComparison } from '@/lib/benchmarks';
+import { getWeeklyComparison } from '@/lib/weekly-comparison';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,6 +70,18 @@ export async function GET(
     .gte('date', sevenDaysAgo)
     .order('date', { ascending: true });
 
+  // Get 30-day history for trend charts
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0];
+
+  const { data: historyMetrics } = await supabase
+    .from('daily_metrics')
+    .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
+    .eq('merchant_id', internalId)
+    .gte('date', thirtyDaysAgo)
+    .order('date', { ascending: true });
+
   // Get active restriction count
   const { count: activeRestrictions } = await supabase
     .from('restrictions')
@@ -120,6 +133,19 @@ export async function GET(
     healthScore: Number(row.health_score),
   }));
 
+  // Format 30-day history for trend charts
+  const historyRows = historyMetrics ?? [];
+  const history = {
+    dates: historyRows.map((r) => String(r.date)),
+    disputeRatios: historyRows.map((r) => Number(r.dispute_ratio)),
+    fraudRatios: historyRows.map((r) => Number(r.fraud_ratio)),
+    declineRates: historyRows.map((r) => Number(r.decline_rate)),
+    healthScores: historyRows.map((r) => Number(r.health_score)),
+  };
+
+  // Week-over-week comparison
+  const weeklyComparison = await getWeeklyComparison(internalId);
+
   return Response.json(
     {
       healthScore,
@@ -134,6 +160,8 @@ export async function GET(
       projections,
       benchmark,
       sparkline,
+      history,
+      weeklyComparison,
       lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
     },
     { headers: CORS_HEADERS }
