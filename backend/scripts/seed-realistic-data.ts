@@ -64,6 +64,7 @@ async function seed() {
     supabase.from('daily_metrics').delete().eq('merchant_id', merchantId),
     supabase.from('alerts').delete().eq('merchant_id', merchantId),
     supabase.from('restrictions').delete().eq('merchant_id', merchantId),
+    supabase.from('events').delete().eq('merchant_id', merchantId),
   ]);
 
   // 3. Generate 14 days of daily metrics with a realistic upward trend
@@ -103,6 +104,9 @@ async function seed() {
     else if (disputeRatio >= 0.005) healthScore -= 5;
     if (declineRate >= 0.20) healthScore -= 20;
     else if (declineRate >= 0.10) healthScore -= 10;
+    // Apply restriction penalty (-15) to match calculations.ts behavior
+    // Only the most recent days reflect the restriction being active
+    if (daysAgo <= 3) healthScore -= 15;
     healthScore = Math.max(0, Math.min(100, healthScore));
 
     rows.push({
@@ -136,7 +140,7 @@ async function seed() {
       severity: 'info',
       title: 'Dispute ratio elevated at 0.50%',
       message: 'Your dispute ratio is 0.50%. Still below warning thresholds but worth monitoring.',
-      delivered_via: JSON.stringify(['email']),
+      delivered_via: ['email'],
       acknowledged: true,
       created_at: new Date(Date.now() - 10 * 24 * 3600000).toISOString(),
     },
@@ -146,7 +150,7 @@ async function seed() {
       severity: 'warning',
       title: 'Dispute ratio approaching danger at 0.75%',
       message: 'Your dispute ratio is 0.75%, approaching the 1.0% Mastercard CMM threshold. Review recent disputes.',
-      delivered_via: JSON.stringify(['email', 'slack']),
+      delivered_via: ['email', 'slack'],
       acknowledged: false,
       created_at: new Date(Date.now() - 3 * 24 * 3600000).toISOString(),
     },
@@ -156,7 +160,7 @@ async function seed() {
       severity: 'warning',
       title: 'Decline rate elevated at 12.5%',
       message: 'Your decline rate is 12.5%, approaching the 20% Visa enumeration threshold. Monitor for unusual patterns.',
-      delivered_via: JSON.stringify(['email']),
+      delivered_via: ['email'],
       acknowledged: false,
       created_at: new Date(Date.now() - 1 * 24 * 3600000).toISOString(),
     },
@@ -166,7 +170,7 @@ async function seed() {
       severity: 'critical',
       title: 'Account capability under review',
       message: 'Stripe has placed your card_payments capability under review. Additional documentation may be requested.',
-      delivered_via: JSON.stringify(['email', 'slack', 'sms']),
+      delivered_via: ['email', 'slack', 'sms'],
       acknowledged: false,
       created_at: new Date(Date.now() - 6 * 3600000).toISOString(),
     },
@@ -176,7 +180,45 @@ async function seed() {
   if (alertsErr) { console.error('Alerts insert failed:', alertsErr); return; }
   console.log(`Inserted ${alertsData.length} alerts (info, warning, critical)`);
 
-  // 5. Insert an active restriction
+  // 5. Insert dispute events so "Recent Disputes" section has data
+  // Must match the total_disputes count from daily_metrics for consistency
+  const totalSeededDisputes = latest.total_disputes;
+  const disputeReasons = ['fraudulent', 'product_not_received', 'credit_not_processed', 'duplicate', 'general', 'subscription_canceled', 'unrecognized', 'product_unacceptable'];
+  const disputeStatuses = ['needs_response', 'needs_response', 'needs_response', 'under_review', 'under_review', 'won', 'lost'];
+  const disputeEvents = [];
+  for (let i = 0; i < totalSeededDisputes; i++) {
+    const daysAgo = Math.floor(Math.random() * 28) + 1;
+    const reason = disputeReasons[i % disputeReasons.length];
+    const status = disputeStatuses[i % disputeStatuses.length];
+    const amount = Math.floor(Math.random() * 30000) + 1500; // $15 - $315 in cents
+    const respondByDate = status === 'needs_response'
+      ? Math.floor((Date.now() + (7 + Math.floor(Math.random() * 14)) * 24 * 3600000) / 1000)
+      : null;
+    disputeEvents.push({
+      merchant_id: merchantId,
+      stripe_event_id: `evt_demo_dispute_${i}_${Date.now()}`,
+      event_type: 'charge.dispute.created',
+      // JSONB column — pass a plain object, NOT JSON.stringify
+      payload: {
+        object: {
+          id: `dp_demo_${i}`,
+          amount,
+          currency: 'usd',
+          status,
+          reason,
+          charge: `ch_demo_${i}`,
+          evidence_details: respondByDate ? { due_by: respondByDate } : null,
+        },
+      },
+      processed: true,
+      created_at: new Date(Date.now() - daysAgo * 24 * 3600000).toISOString(),
+    });
+  }
+  const { error: eventsErr } = await supabase.from('events').insert(disputeEvents);
+  if (eventsErr) { console.error('Events insert failed:', eventsErr); return; }
+  console.log(`Inserted ${disputeEvents.length} dispute events for Recent Disputes section`);
+
+  // 6. Insert an active restriction
   const { error: restrictionErr } = await supabase.from('restrictions').insert({
     merchant_id: merchantId,
     restriction_type: 'capability_pending',

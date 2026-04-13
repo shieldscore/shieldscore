@@ -58,39 +58,90 @@ export async function GET(
 
   const totalCharges = latestMetrics?.total_charges ?? 0;
 
-  // Fetch recent disputes from Stripe
-  const stripeDisputes: Stripe.Dispute[] = [];
-  for await (const dispute of stripe.disputes.list(
-    { limit: 20, expand: ['data.charge'] },
-    { stripeAccount: merchant.stripe_account_id }
-  )) {
-    stripeDisputes.push(dispute);
-    if (stripeDisputes.length >= 20) break;
+  // Check for stored dispute events first (from webhooks or seeded data).
+  // These are our source of truth since they match daily_metrics counts.
+  const { data: disputeEvents } = await supabase
+    .from('events')
+    .select('stripe_event_id, payload, created_at')
+    .eq('merchant_id', merchant.id)
+    .eq('event_type', 'charge.dispute.created')
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  let disputes: DisputeItem[] = [];
+
+  if (disputeEvents && disputeEvents.length > 0) {
+    disputes = disputeEvents.map((event) => {
+      // Handle both properly stored JSONB objects and double-serialized strings
+      let payload = event.payload as Record<string, unknown> | string | null;
+      if (typeof payload === 'string') {
+        try { payload = JSON.parse(payload) as Record<string, unknown>; } catch { payload = null; }
+      }
+      const payloadObj = payload as Record<string, unknown> | null;
+      const disputeObj = (payloadObj?.object ?? payloadObj) as Record<string, unknown> | null;
+      const reason = (disputeObj?.reason as string) ?? 'general';
+      const guidance = getDisputeGuidance(reason);
+      const amount = (disputeObj?.amount as number) ?? 0;
+      const created = Math.floor(new Date(event.created_at).getTime() / 1000);
+      const evidenceDetails = disputeObj?.evidence_details as Record<string, unknown> | null;
+
+      return {
+        id: event.stripe_event_id,
+        amount,
+        currency: (disputeObj?.currency as string) ?? 'usd',
+        status: (disputeObj?.status as string) ?? 'needs_response',
+        reason,
+        created,
+        chargeId: (disputeObj?.charge as string) ?? null,
+        respondBy: (evidenceDetails?.due_by as number) ?? null,
+        ratioImpact: totalCharges > 0 ? (1 / totalCharges) * 100 : 0,
+        guidance: {
+          advice: guidance.advice,
+          winRate: guidance.winRate,
+          priority: guidance.priority,
+          evidenceFields: guidance.evidenceFields,
+        },
+      };
+    });
+  } else {
+    // No stored events — fetch directly from Stripe API
+    try {
+      const stripeDisputes: Stripe.Dispute[] = [];
+      for await (const dispute of stripe.disputes.list(
+        { limit: 20, expand: ['data.charge'] },
+        { stripeAccount: merchant.stripe_account_id }
+      )) {
+        stripeDisputes.push(dispute);
+        if (stripeDisputes.length >= 20) break;
+      }
+
+      disputes = stripeDisputes.map((dispute) => {
+        const reason = dispute.reason ?? 'general';
+        const guidance = getDisputeGuidance(reason);
+        const charge = dispute.charge as Stripe.Charge | null;
+
+        return {
+          id: dispute.id,
+          amount: dispute.amount,
+          currency: dispute.currency,
+          status: dispute.status,
+          reason,
+          created: dispute.created,
+          chargeId: charge?.id ?? (typeof dispute.charge === 'string' ? dispute.charge : null),
+          respondBy: dispute.evidence_details?.due_by ?? null,
+          ratioImpact: totalCharges > 0 ? (1 / totalCharges) * 100 : 0,
+          guidance: {
+            advice: guidance.advice,
+            winRate: guidance.winRate,
+            priority: guidance.priority,
+            evidenceFields: guidance.evidenceFields,
+          },
+        };
+      });
+    } catch {
+      // Stripe API may fail for demo/test accounts — return empty
+    }
   }
-
-  const disputes: DisputeItem[] = stripeDisputes.map((dispute) => {
-    const reason = dispute.reason ?? 'general';
-    const guidance = getDisputeGuidance(reason);
-    const charge = dispute.charge as Stripe.Charge | null;
-
-    return {
-      id: dispute.id,
-      amount: dispute.amount,
-      currency: dispute.currency,
-      status: dispute.status,
-      reason,
-      created: dispute.created,
-      chargeId: charge?.id ?? (typeof dispute.charge === 'string' ? dispute.charge : null),
-      respondBy: dispute.evidence_details?.due_by ?? null,
-      ratioImpact: totalCharges > 0 ? (1 / totalCharges) * 100 : 0,
-      guidance: {
-        advice: guidance.advice,
-        winRate: guidance.winRate,
-        priority: guidance.priority,
-        evidenceFields: guidance.evidenceFields,
-      },
-    };
-  });
 
   return Response.json({
     merchantId,

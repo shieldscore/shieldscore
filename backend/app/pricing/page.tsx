@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Nav from "../components/Nav";
 import Footer from "../components/Footer";
-import PricingButton from "../components/PricingButton";
+
 
 export const metadata: Metadata = {
   title: "Pricing | ShieldScore",
   description:
-    "Simple, transparent pricing for Stripe account health monitoring. Monitor plan at $29/mo, Defend plan coming soon at $59/mo.",
+    "Free Stripe account health monitoring. Monitor plan is free, Defend plan coming soon at $59/mo.",
 };
 
 function CheckIcon() {
@@ -34,10 +34,10 @@ export default function PricingPage() {
             Simple pricing
           </div>
           <h1 className="mb-3 text-center text-[32px] font-bold tracking-[-0.025em] md:text-[42px]">
-            Cheaper than one frozen payout.
+            Free to start. Upgrade when you need more.
           </h1>
           <p className="mx-auto mb-14 max-w-[480px] text-center text-[17px] leading-[1.7] text-[#555555]">
-            Read-only access. We never touch your funds. Cancel anytime.
+            Monitor your account health at no cost. We never touch your funds. Cancel anytime.
           </p>
 
           <div className="mx-auto grid max-w-[720px] gap-5 md:grid-cols-2">
@@ -48,10 +48,10 @@ export default function PricingPage() {
               </span>
               <div className="mb-2 text-[15px] font-medium text-[#555555]">Monitor</div>
               <div className="mb-1 text-[48px] font-bold">
-                $29<span className="text-base font-normal text-[#888888]">/mo</span>
+                Free
               </div>
               <div className="mb-7 text-sm text-[#888888]">
-                Essential protection for growing businesses
+                Everything you need to monitor your account health
               </div>
               <ul className="mb-7 list-none space-y-0">
                 {[
@@ -70,9 +70,14 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
-              <PricingButton variant="filled">
-                Install from Stripe
-              </PricingButton>
+              <a
+                href="https://marketplace.stripe.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full cursor-pointer items-center justify-center rounded-[10px] bg-[#111111] py-3.5 text-[15px] font-semibold text-white no-underline transition-colors hover:bg-[#333]"
+              >
+                Install free from Stripe
+              </a>
             </div>
 
             {/* Defend */}

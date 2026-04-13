@@ -76,7 +76,20 @@ export async function GET(
     .eq('merchant_id', internalId)
     .eq('resolved', false);
 
-  const healthScore = latestMetrics?.health_score ?? 100;
+  // Recalculate health score factoring in active restrictions
+  // The stored health_score may not reflect current restriction status
+  let healthScore = latestMetrics?.health_score ?? 100;
+  if ((activeRestrictions ?? 0) > 0) {
+    // Apply -15 restriction penalty if not already baked in
+    // Re-derive from raw ratios to ensure consistency
+    const { calculateHealthScore } = await import('@/lib/calculations');
+    healthScore = calculateHealthScore(
+      Number(latestMetrics?.fraud_ratio ?? 0) + Number(latestMetrics?.dispute_ratio ?? 0),
+      Number(latestMetrics?.dispute_ratio ?? 0),
+      Number(latestMetrics?.decline_rate ?? 0),
+      true
+    );
+  }
 
   const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
     calculateTrend(internalId, 'dispute_ratio'),

@@ -9,14 +9,16 @@ export default function Nav() {
         </a>
 
         <div className="hidden items-center gap-6 md:flex">
-          <a href="#how-it-works" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">How it works</a>
-          <a href="#features" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">Monitoring</a>
-          <a href="#pricing" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">Pricing</a>
-          <a href="#faq" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">FAQ</a>
+          <a href="/#how-it-works" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">How it works</a>
+          <a href="/#features" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">Monitoring</a>
+          <a href="/#pricing" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">Pricing</a>
+          <a href="/blog" className="text-[13px] font-medium text-[#666] no-underline hover:text-[#111]">Blog</a>
         </div>
 
         <a
-          href="/pricing"
+          href="https://marketplace.stripe.com"
+          target="_blank"
+          rel="noopener noreferrer"
           className="btn-hover inline-flex items-center rounded-lg bg-[#111] px-5 py-2 text-[13px] font-semibold text-white no-underline"
         >
           Install from Stripe

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { after } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { stripe } from '@/lib/stripe';
 import { calculateAllMetrics } from '@/lib/calculations';
@@ -94,9 +95,13 @@ export async function POST(request: NextRequest) {
       throw insertError;
     }
 
-    // Trigger initial data pull in the background (don't block the response)
-    triggerInitialSync(stripeAccountId, merchant.id).catch((err) => {
-      console.error(`Initial sync failed for ${stripeAccountId}:`, err);
+    // Trigger initial data pull after response is sent (survives serverless shutdown)
+    after(async () => {
+      try {
+        await triggerInitialSync(stripeAccountId, merchant.id);
+      } catch (err) {
+        console.error(`Initial sync failed for ${stripeAccountId}:`, err);
+      }
     });
 
     return NextResponse.json(

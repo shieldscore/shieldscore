@@ -71,7 +71,9 @@ export default function Home() {
               <div className="hero-stagger-3">
                 <div className="mt-8">
                   <a
-                    href="/pricing"
+                    href="https://marketplace.stripe.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="btn-hover inline-flex items-center rounded-lg bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"
                   >
                     Install from Stripe
@@ -771,10 +773,10 @@ export default function Home() {
               Pricing
             </p>
             <h2 className="mb-3 text-center text-[28px] font-bold tracking-[-0.02em] text-[#111] md:text-[40px]">
-              Cheaper than one frozen payout.
+              Free to start. Upgrade when you need more.
             </h2>
             <p className="mx-auto mb-14 max-w-[440px] text-center text-[15px] leading-[1.7] text-[#888]">
-              Read-only access. We never touch your funds. Cancel anytime.
+              Monitor your account health at no cost. We never touch your funds. Cancel anytime.
             </p>
 
             <div className="mx-auto grid max-w-[800px] gap-5 md:grid-cols-2">
@@ -784,13 +786,10 @@ export default function Home() {
                   Monitor
                 </div>
                 <div className="mb-1 text-[#111]">
-                  <span className="font-mono text-[48px] font-bold">$29</span>
-                  <span className="text-base font-normal text-[#888]">
-                    /mo
-                  </span>
+                  <span className="font-mono text-[48px] font-bold">Free</span>
                 </div>
                 <div className="mb-7 text-[14px] text-[#888]">
-                  Essential protection for growing businesses
+                  Everything you need to monitor your account health
                 </div>
                 <ul className="mb-7 list-none space-y-0">
                   {[
@@ -810,10 +809,12 @@ export default function Home() {
                   ))}
                 </ul>
                 <a
-                  href="/pricing"
+                  href="https://marketplace.stripe.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="btn-hover flex w-full items-center justify-center rounded-lg bg-[#111] py-3.5 text-[15px] font-semibold text-white no-underline"
                 >
-                  Install from Stripe
+                  Install free from Stripe
                 </a>
               </div>
 
@@ -893,14 +894,15 @@ export default function Home() {
               Start monitoring your Stripe account health. Takes 60 seconds.
             </p>
             <a
-              href="/pricing"
+              href="https://marketplace.stripe.com"
+              target="_blank"
+              rel="noopener noreferrer"
               className="btn-hover mt-8 inline-flex items-center rounded-lg bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"
             >
               Install from Stripe
             </a>
             <p className="mt-4 font-mono text-[12px] text-[#999]">
-              Read-only access. <span className="font-mono">$29</span>/mo.
-              Cancel anytime.
+              Read-only access. Free. Cancel anytime.
             </p>
           </div>
         </AnimateOnScroll>

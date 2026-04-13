@@ -109,6 +109,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [lastChecked, setLastChecked] = useState<Date>(new Date());
   const [disputes, setDisputes] = useState<DisputeItem[]>([]);
   const [expandedDispute, setExpandedDispute] = useState<string | null>(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const fetchMetrics = useCallback(async () => {
     try {
@@ -270,17 +271,19 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       brandIcon={BrandIcon}
       brandColor="#1a1a2e"
       banner={
-        metrics.activeRestrictions > 0 ? (
+        !bannerDismissed && metrics.activeRestrictions > 0 ? (
           <Banner
             type="critical"
             title="Account restriction detected"
             description="Stripe has flagged your account. Check Settings > Account details."
+            onDismiss={() => setBannerDismissed(true)}
           />
-        ) : metrics.healthStatus === 'red' ? (
+        ) : !bannerDismissed && metrics.healthStatus === 'red' ? (
           <Banner
             type="critical"
             title="Health score critical"
             description={`Score: ${metrics.healthScore}/100. Immediate action needed.`}
+            onDismiss={() => setBannerDismissed(true)}
           />
         ) : undefined
       }
