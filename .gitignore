@@ -36,4 +36,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-.vercel
+# Claude Code
+.agents/
+.claude/
+skills-lock.json
+
+# Supabase
+supabase/.temp/
+
+# Email tests
+.email-test-output/

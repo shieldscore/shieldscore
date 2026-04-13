@@ -70,8 +70,8 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
-              <PricingButton plan="monitor" variant="filled">
-                Start monitoring
+              <PricingButton variant="filled">
+                Install from Stripe
               </PricingButton>
             </div>
 

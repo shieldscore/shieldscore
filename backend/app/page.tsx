@@ -74,7 +74,7 @@ export default function Home() {
                     href="/pricing"
                     className="btn-hover inline-flex items-center rounded-lg bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"
                   >
-                    Get started
+                    Install from Stripe
                   </a>
                 </div>
               </div>
@@ -813,7 +813,7 @@ export default function Home() {
                   href="/pricing"
                   className="btn-hover flex w-full items-center justify-center rounded-lg bg-[#111] py-3.5 text-[15px] font-semibold text-white no-underline"
                 >
-                  Start monitoring
+                  Install from Stripe
                 </a>
               </div>
 
@@ -896,7 +896,7 @@ export default function Home() {
               href="/pricing"
               className="btn-hover mt-8 inline-flex items-center rounded-lg bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"
             >
-              Get started
+              Install from Stripe
             </a>
             <p className="mt-4 font-mono text-[12px] text-[#999]">
               Read-only access. <span className="font-mono">$29</span>/mo.

@@ -19,7 +19,7 @@ export default function Nav() {
           href="/pricing"
           className="btn-hover inline-flex items-center rounded-lg bg-[#111] px-5 py-2 text-[13px] font-semibold text-white no-underline"
         >
-          Get started
+          Install from Stripe
         </a>
       </div>
     </nav>

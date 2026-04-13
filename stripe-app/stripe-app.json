@@ -1,12 +1,47 @@
 {
+  "$schema": "https://stripe.com/stripe-app.schema.json",
   "id": "com.shieldscore.app",
-  "version": "0.0.1",
   "name": "ShieldScore",
-  "icon": "",
-  "permissions": [],
+  "version": "1.0.0",
+  "icon": "./icon.png",
   "ui_extension": {
-    "views": [],
-    "actions": [],
-    "content_security_policy": {}
-  }
+    "views": [
+      {
+        "viewport": "stripe.dashboard.home.overview",
+        "component": "DashboardView"
+      },
+      {
+        "viewport": "stripe.dashboard.drawer.default",
+        "component": "DetailView"
+      }
+    ],
+    "content_security_policy": {
+      "connect-src": [
+        "https://shieldscore.io/api/metrics",
+        "https://shieldscore.io/api/onboard",
+        "https://shieldscore.io/api/alerts"
+      ],
+      "purpose": "Connects to ShieldScore backend API for health metrics"
+    }
+  },
+  "extensions": null,
+  "permissions": [
+    {
+      "permission": "connected_account_read",
+      "purpose": "Monitor account health, restrictions, and capability status"
+    },
+    {
+      "permission": "charge_read",
+      "purpose": "Calculate transaction volume for compliance ratio tracking"
+    },
+    {
+      "permission": "dispute_read",
+      "purpose": "Track disputes for VAMP and ECM threshold monitoring"
+    },
+    {
+      "permission": "review_read",
+      "purpose": "Monitor TC40 fraud reports for Visa VAMP ratio calculation"
+    }
+  ],
+  "distribution_type": "public"
 }

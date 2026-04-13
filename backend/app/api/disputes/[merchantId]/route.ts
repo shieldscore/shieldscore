@@ -13,6 +13,7 @@ interface DisputeItem {
   reason: string;
   created: number;
   chargeId: string | null;
+  respondBy: number | null;
   ratioImpact: number;
   guidance: {
     advice: string;
@@ -34,11 +35,12 @@ export async function GET(
 ) {
   const { merchantId } = await params;
 
-  // Look up merchant
+  // Look up merchant (accepts both Supabase UUID and Stripe account ID)
+  const isStripeAccountId = merchantId.startsWith('acct_');
   const { data: merchant, error: merchantError } = await supabase
     .from('merchants')
     .select('id, stripe_account_id')
-    .eq('id', merchantId)
+    .eq(isStripeAccountId ? 'stripe_account_id' : 'id', merchantId)
     .single();
 
   if (merchantError || !merchant) {
@@ -49,7 +51,7 @@ export async function GET(
   const { data: latestMetrics } = await supabase
     .from('daily_metrics')
     .select('total_charges')
-    .eq('merchant_id', merchantId)
+    .eq('merchant_id', merchant.id)
     .order('date', { ascending: false })
     .limit(1)
     .single();
@@ -79,6 +81,7 @@ export async function GET(
       reason,
       created: dispute.created,
       chargeId: charge?.id ?? (typeof dispute.charge === 'string' ? dispute.charge : null),
+      respondBy: dispute.evidence_details?.due_by ?? null,
       ratioImpact: totalCharges > 0 ? (1 / totalCharges) * 100 : 0,
       guidance: {
         advice: guidance.advice,

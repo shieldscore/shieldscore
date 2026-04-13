@@ -1,42 +1,18 @@
 "use client";
 
-import { useState } from "react";
-
 interface PricingButtonProps {
-  plan: string;
   variant: "filled" | "outline";
+  disabled?: boolean;
   children: React.ReactNode;
 }
 
-export default function PricingButton({ plan, variant, children }: PricingButtonProps) {
-  const [loading, setLoading] = useState(false);
-
-  async function handleClick() {
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
-      });
-
-      const data = await res.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        alert(data.error || "Something went wrong. Please try again.");
-        setLoading(false);
-      }
-    } catch {
-      alert("Something went wrong. Please try again.");
-      setLoading(false);
-    }
+export default function PricingButton({ variant, disabled, children }: PricingButtonProps) {
+  function handleClick() {
+    alert("Coming soon to the Stripe App Marketplace. Join the waitlist at shieldscore.com to be notified when we launch.");
   }
 
   const base =
-    "flex w-full cursor-pointer items-center justify-center rounded-[10px] py-3.5 text-[15px] font-semibold transition-colors disabled:opacity-60";
+    "flex w-full cursor-pointer items-center justify-center rounded-[10px] py-3.5 text-[15px] font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
 
   const styles =
     variant === "filled"
@@ -44,8 +20,8 @@ export default function PricingButton({ plan, variant, children }: PricingButton
       : `${base} border-[1.5px] border-[#e5e7eb] bg-white text-[#111111] hover:bg-[#f9fafb]`;
 
   return (
-    <button onClick={handleClick} disabled={loading} className={styles}>
-      {loading ? "Redirecting..." : children}
+    <button onClick={handleClick} disabled={disabled} className={styles}>
+      {children}
     </button>
   );
 }

@@ -4,18 +4,27 @@ import {
   calculateTrend,
   calculateProjections,
 } from '@/lib/calculations';
-import { getIndustryBenchmark, getBenchmarkComparison } from '@/lib/benchmarks';
+import { getBenchmarkComparison } from '@/lib/benchmarks';
 
 export const dynamic = 'force-dynamic';
+
+// TODO: Lock down to https://dashboard.stripe.com before production deploy
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export async function OPTIONS() {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
 
 /**
  * GET /api/metrics/[merchantId]
  *
- * Returns the latest health metrics for a merchant, including:
- * - Current ratios (VAMP, MC dispute, decline rate)
- * - Health score with color status
- * - Active restriction count
- * - Last 7 days of daily metrics for mini sparkline
+ * Returns the latest health metrics for a merchant.
+ * Accepts both Supabase UUID and Stripe account ID (acct_xxx).
+ * Includes 7-day sparkline data for trend visualization.
  */
 export async function GET(
   _request: Request,
@@ -23,27 +32,32 @@ export async function GET(
 ) {
   const { merchantId } = await params;
 
-  // Validate merchantId exists
+  const isStripeAccountId = merchantId.startsWith('acct_');
   const { data: merchant, error: merchantError } = await supabase
     .from('merchants')
     .select('id, stripe_account_id, plan, mcc_code')
-    .eq('id', merchantId)
+    .eq(isStripeAccountId ? 'stripe_account_id' : 'id', merchantId)
     .single();
 
   if (merchantError || !merchant) {
-    return Response.json({ error: 'Merchant not found' }, { status: 404 });
+    return Response.json(
+      { error: 'Merchant not found' },
+      { status: 404, headers: CORS_HEADERS }
+    );
   }
+
+  const internalId = merchant.id as string;
 
   // Get latest daily metrics
   const { data: latestMetrics } = await supabase
     .from('daily_metrics')
     .select('*')
-    .eq('merchant_id', merchantId)
+    .eq('merchant_id', internalId)
     .order('date', { ascending: false })
     .limit(1)
     .single();
 
-  // Get last 7 days for sparkline data
+  // Get 7-day history for sparkline charts
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     .toISOString()
     .split('T')[0];
@@ -51,7 +65,7 @@ export async function GET(
   const { data: recentMetrics } = await supabase
     .from('daily_metrics')
     .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
-    .eq('merchant_id', merchantId)
+    .eq('merchant_id', internalId)
     .gte('date', sevenDaysAgo)
     .order('date', { ascending: true });
 
@@ -59,22 +73,21 @@ export async function GET(
   const { count: activeRestrictions } = await supabase
     .from('restrictions')
     .select('id', { count: 'exact', head: true })
-    .eq('merchant_id', merchantId)
+    .eq('merchant_id', internalId)
     .eq('resolved', false);
 
   const healthScore = latestMetrics?.health_score ?? 100;
 
-  // Calculate trend directions for each ratio
   const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
-    calculateTrend(merchantId, 'dispute_ratio'),
-    calculateTrend(merchantId, 'fraud_ratio'),
-    calculateTrend(merchantId, 'decline_rate'),
+    calculateTrend(internalId, 'dispute_ratio'),
+    calculateTrend(internalId, 'fraud_ratio'),
+    calculateTrend(internalId, 'decline_rate'),
   ]);
 
   const currentDisputeRatio = Number(latestMetrics?.dispute_ratio ?? 0);
+  const currentFraudRatio = Number(latestMetrics?.fraud_ratio ?? 0);
   const currentDeclineRate = Number(latestMetrics?.decline_rate ?? 0);
 
-  // Calculate days-until-threshold projections
   const projections = calculateProjections(
     currentDisputeRatio,
     disputeTrend,
@@ -82,37 +95,34 @@ export async function GET(
     declineTrend
   );
 
-  // Industry benchmark comparison
   const mccCode: string = (merchant.mcc_code as string) ?? '5999';
   const benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
 
-  return Response.json({
-    merchantId,
-    plan: merchant.plan,
-    current: {
-      date: latestMetrics?.date ?? null,
-      vampRatio: {
-        current: Number(latestMetrics?.fraud_ratio ?? 0),
-        trend: fraudTrend,
-      },
-      mcDisputeRatio: {
-        current: currentDisputeRatio,
-        trend: disputeTrend,
-      },
-      declineRate: {
-        current: currentDeclineRate,
-        trend: declineTrend,
-      },
+  // Format sparkline data for the Stripe App charts
+  const sparkline = (recentMetrics ?? []).map((row) => ({
+    date: String(row.date),
+    disputeRatio: Number(row.dispute_ratio),
+    fraudRatio: Number(row.fraud_ratio),
+    declineRate: Number(row.decline_rate),
+    healthScore: Number(row.health_score),
+  }));
+
+  return Response.json(
+    {
       healthScore,
       healthStatus: getHealthStatus(healthScore),
+      disputeRatio: { current: currentDisputeRatio, trend: disputeTrend },
+      fraudRatio: { current: currentFraudRatio, trend: fraudTrend },
+      declineRate: { current: currentDeclineRate, trend: declineTrend },
       totalCharges: latestMetrics?.total_charges ?? 0,
       totalDisputes: latestMetrics?.total_disputes ?? 0,
       totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
-      totalDeclines: latestMetrics?.total_declines ?? 0,
+      activeRestrictions: activeRestrictions ?? 0,
+      projections,
+      benchmark,
+      sparkline,
+      lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
     },
-    activeRestrictions: activeRestrictions ?? 0,
-    projections,
-    benchmark,
-    trend: recentMetrics ?? [],
-  });
+    { headers: CORS_HEADERS }
+  );
 }
