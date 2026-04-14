@@ -18,7 +18,10 @@ export const metadata: Metadata = {
   description:
     "Real-time account health monitoring for Stripe merchants. Track your VAMP and ECM ratios, get instant alerts on hidden restrictions, and prevent sudden account freezes.",
   icons: {
-    icon: "/icon.svg",
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/icon.svg",
   },
   openGraph: {
     title: "ShieldScore | Know Before Stripe Freezes You",

@@ -76,7 +76,7 @@ export default function DashboardMockup() {
   const { runwayRef, contentRef, wrapperRef } = useStickyScroll();
 
   return (
-    <div ref={runwayRef} className="mt-4" style={{ height: "calc(100vh + 200px)" }}>
+    <div ref={runwayRef} className="mt-4" style={{ height: "calc(100vh + 80px)" }}>
       <div className="sticky top-[80px] px-4 md:px-6">
         <div className="mx-auto max-w-[1000px]">
           <div ref={wrapperRef} className="mockup-scale-wrapper relative max-h-[800px] overflow-hidden md:max-h-[520px]">
