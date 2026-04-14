@@ -77,6 +77,127 @@ body::before {
   animation: hero-slide-in 0.8s var(--ease-premium) 200ms both;
 }
 
+/* ── Dashboard mockup animations ── */
+
+@keyframes mockup-chrome-enter {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes mockup-row-slide {
+  from { opacity: 0; transform: translateY(15px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes mockup-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mockup-badge-pop {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes mockup-draw-line {
+  from { stroke-dashoffset: var(--line-len, 100); }
+  to { stroke-dashoffset: 0; }
+}
+
+@keyframes mockup-bar-fill {
+  from { width: 0; }
+  to { width: var(--bar-w); }
+}
+
+/* Scale wrapper */
+.mockup-scale-wrapper {
+  transform: scale(0.85);
+  transform-origin: top center;
+}
+
+@media (max-width: 768px) {
+  .mockup-scale-wrapper {
+    transform: scale(0.8);
+  }
+}
+
+/* 1. Browser chrome */
+.mockup-chrome-enter {
+  will-change: transform, opacity;
+  animation: mockup-chrome-enter 0.6s var(--ease-premium) 0ms both;
+}
+
+/* 2. Row 1 */
+.mockup-row1 {
+  will-change: transform, opacity;
+  animation: mockup-row-slide 0.5s var(--ease-premium) 400ms both;
+}
+
+/* 3. Gauge */
+.mockup-gauge-fade {
+  will-change: opacity;
+  animation: mockup-fade-in 0.4s var(--ease-premium) 600ms both;
+}
+
+/* 4. Caution badge */
+.mockup-badge-pop {
+  will-change: transform, opacity;
+  animation: mockup-badge-pop 0.3s var(--ease-premium) 1000ms both;
+}
+
+/* 5. Row 2 cards */
+.mockup-row2 {
+  will-change: transform, opacity;
+  animation: mockup-row-slide 0.5s var(--ease-premium) 800ms both;
+}
+
+/* 6. Sparklines in row 2 */
+.mockup-sparkline-a polyline,
+.mockup-sparkline-b polyline {
+  --line-len: 80;
+  stroke-dasharray: 80;
+  stroke-dashoffset: 80;
+  animation: mockup-draw-line 0.5s var(--ease-premium) 1100ms both;
+}
+
+/* 7. Progress bar fill */
+.mockup-bar-a {
+  --bar-w: 60%;
+  animation: mockup-bar-fill 0.6s var(--ease-premium) 1100ms both;
+}
+
+/* 8. Row 3 */
+.mockup-row3 {
+  will-change: transform, opacity;
+  animation: mockup-row-slide 0.5s var(--ease-premium) 1300ms both;
+}
+
+/* 9. Countdown badge pops */
+.mockup-cd-1 {
+  will-change: transform, opacity;
+  animation: mockup-badge-pop 0.3s var(--ease-premium) 1500ms both;
+}
+.mockup-cd-2 {
+  will-change: transform, opacity;
+  animation: mockup-badge-pop 0.3s var(--ease-premium) 1600ms both;
+}
+.mockup-cd-3 {
+  will-change: transform, opacity;
+  animation: mockup-badge-pop 0.3s var(--ease-premium) 1700ms both;
+}
+
+/* 10. Row 4 */
+.mockup-row4 {
+  will-change: transform, opacity;
+  animation: mockup-row-slide 0.5s var(--ease-premium) 1800ms both;
+}
+
+/* 11. Row 5 */
+.mockup-row5 {
+  will-change: transform, opacity;
+  animation: mockup-row-slide 0.5s var(--ease-premium) 2000ms both;
+}
+
 /* ── Floating bob ── */
 
 @keyframes float {

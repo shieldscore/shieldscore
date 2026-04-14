@@ -10,6 +10,7 @@ import { generateRemediationPlan } from '@/lib/remediation';
 import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
 import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 import { getCorsHeaders, handlePreflight } from '@/lib/cors';
+import { normalizePlan, meetsMinimumPlan } from '@/lib/plan-gates';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,6 +77,9 @@ export async function GET(
     }
 
     const internalId = merchant.id as string;
+    const plan = normalizePlan(merchant.plan as string);
+    const isPro = meetsMinimumPlan(plan, 'pro');
+    const isDefend = meetsMinimumPlan(plan, 'defend');
 
     // Get latest daily metrics
     const { data: latestMetrics } = await supabase
@@ -85,30 +89,6 @@ export async function GET(
       .order('date', { ascending: false })
       .limit(1)
       .single();
-
-    // Get 7-day history for sparkline charts
-    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
-
-    const { data: recentMetrics } = await supabase
-      .from('daily_metrics')
-      .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
-      .eq('merchant_id', internalId)
-      .gte('date', sevenDaysAgo)
-      .order('date', { ascending: true });
-
-    // Get history for trend charts (30 or 90 days)
-    const historyStart = new Date(Date.now() - historyDays * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split('T')[0];
-
-    const { data: historyMetrics } = await supabase
-      .from('daily_metrics')
-      .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
-      .eq('merchant_id', internalId)
-      .gte('date', historyStart)
-      .order('date', { ascending: true });
 
     // Get active restriction count
     const { count: activeRestrictions } = await supabase
@@ -129,82 +109,115 @@ export async function GET(
       );
     }
 
-    const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
-      calculateTrend(internalId, 'dispute_ratio'),
-      calculateTrend(internalId, 'fraud_ratio'),
-      calculateTrend(internalId, 'decline_rate'),
-    ]);
-
     const currentDisputeRatio = Number(latestMetrics?.dispute_ratio ?? 0);
     const currentFraudRatio = Number(latestMetrics?.fraud_ratio ?? 0);
     const currentDeclineRate = Number(latestMetrics?.decline_rate ?? 0);
 
-    const projections = calculateProjections(
-      currentDisputeRatio,
-      disputeTrend,
-      currentDeclineRate,
-      declineTrend
-    );
-
-    const mccCode: string = (merchant.mcc_code as string) ?? '5999';
-    const benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
-
-    const sparkline = (recentMetrics ?? []).map((row) => ({
-      date: String(row.date),
-      disputeRatio: Number(row.dispute_ratio),
-      fraudRatio: Number(row.fraud_ratio),
-      declineRate: Number(row.decline_rate),
-      healthScore: Number(row.health_score),
-    }));
-
-    const historyRows = historyMetrics ?? [];
-    const history = {
-      dates: historyRows.map((r) => String(r.date)),
-      disputeRatios: historyRows.map((r) => Number(r.dispute_ratio)),
-      fraudRatios: historyRows.map((r) => Number(r.fraud_ratio)),
-      declineRates: historyRows.map((r) => Number(r.decline_rate)),
-      healthScores: historyRows.map((r) => Number(r.health_score)),
-    };
-
-    const weeklyComparison = await getWeeklyComparison(internalId);
-
-    const fullPlan = generateRemediationPlan({
-      disputeRatio: currentDisputeRatio,
-      fraudRatio: currentFraudRatio,
-      declineRate: currentDeclineRate,
+    // Base response: available to all plans (free, pro, defend)
+    const response: Record<string, unknown> = {
+      plan,
       healthScore,
-      totalDisputes: Number(latestMetrics?.total_disputes ?? 0),
-      totalCharges: Number(latestMetrics?.total_charges ?? 0),
-      hasRestrictions: (activeRestrictions ?? 0) > 0,
-    });
-
-    const remediation = {
-      severity: fullPlan.severity,
-      actionCount: fullPlan.actions.length,
-      topAction: fullPlan.actions.length > 0 ? fullPlan.actions[0].title : null,
+      healthStatus: getHealthStatus(healthScore),
+      disputeRatio: { current: currentDisputeRatio },
+      fraudRatio: { current: currentFraudRatio },
+      declineRate: { current: currentDeclineRate },
+      totalCharges: latestMetrics?.total_charges ?? 0,
+      totalDisputes: latestMetrics?.total_disputes ?? 0,
+      totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
+      activeRestrictions: activeRestrictions ?? 0,
+      lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
     };
 
-    return Response.json(
-      {
+    // Pro+ features: trends, projections, sparkline, history, benchmarks, countdown
+    if (isPro) {
+      const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
+        calculateTrend(internalId, 'dispute_ratio'),
+        calculateTrend(internalId, 'fraud_ratio'),
+        calculateTrend(internalId, 'decline_rate'),
+      ]);
+
+      // Add trend data to ratio objects
+      response.disputeRatio = { current: currentDisputeRatio, trend: disputeTrend };
+      response.fraudRatio = { current: currentFraudRatio, trend: fraudTrend };
+      response.declineRate = { current: currentDeclineRate, trend: declineTrend };
+
+      const projections = calculateProjections(
+        currentDisputeRatio,
+        disputeTrend,
+        currentDeclineRate,
+        declineTrend
+      );
+      response.projections = projections;
+
+      const mccCode: string = (merchant.mcc_code as string) ?? '5999';
+      response.benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
+
+      // 7-day sparkline for trend tracking
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0];
+
+      const { data: recentMetrics } = await supabase
+        .from('daily_metrics')
+        .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
+        .eq('merchant_id', internalId)
+        .gte('date', sevenDaysAgo)
+        .order('date', { ascending: true });
+
+      response.sparkline = (recentMetrics ?? []).map((row) => ({
+        date: String(row.date),
+        disputeRatio: Number(row.dispute_ratio),
+        fraudRatio: Number(row.fraud_ratio),
+        declineRate: Number(row.decline_rate),
+        healthScore: Number(row.health_score),
+      }));
+
+      // Pro gets up to 30 days of history. Defend gets up to 90.
+      const maxHistoryDays = isDefend ? 90 : 30;
+      const clampedDays = Math.min(historyDays, maxHistoryDays);
+      const historyStart = new Date(Date.now() - clampedDays * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split('T')[0];
+
+      const { data: historyMetrics } = await supabase
+        .from('daily_metrics')
+        .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
+        .eq('merchant_id', internalId)
+        .gte('date', historyStart)
+        .order('date', { ascending: true });
+
+      const historyRows = historyMetrics ?? [];
+      response.history = {
+        dates: historyRows.map((r) => String(r.date)),
+        disputeRatios: historyRows.map((r) => Number(r.dispute_ratio)),
+        fraudRatios: historyRows.map((r) => Number(r.fraud_ratio)),
+        declineRates: historyRows.map((r) => Number(r.decline_rate)),
+        healthScores: historyRows.map((r) => Number(r.health_score)),
+      };
+    }
+
+    // Defend-only features: weekly comparison, remediation, velocity
+    if (isDefend) {
+      response.weeklyComparison = await getWeeklyComparison(internalId);
+
+      const fullPlan = generateRemediationPlan({
+        disputeRatio: currentDisputeRatio,
+        fraudRatio: currentFraudRatio,
+        declineRate: currentDeclineRate,
         healthScore,
-        healthStatus: getHealthStatus(healthScore),
-        disputeRatio: { current: currentDisputeRatio, trend: disputeTrend },
-        fraudRatio: { current: currentFraudRatio, trend: fraudTrend },
-        declineRate: { current: currentDeclineRate, trend: declineTrend },
-        totalCharges: latestMetrics?.total_charges ?? 0,
-        totalDisputes: latestMetrics?.total_disputes ?? 0,
-        totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
-        activeRestrictions: activeRestrictions ?? 0,
-        projections,
-        benchmark,
-        sparkline,
-        history,
-        weeklyComparison,
-        remediation,
-        lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
-      },
-      { headers: getCorsHeaders(request) }
-    );
+        totalDisputes: Number(latestMetrics?.total_disputes ?? 0),
+        totalCharges: Number(latestMetrics?.total_charges ?? 0),
+        hasRestrictions: (activeRestrictions ?? 0) > 0,
+      });
+
+      response.remediation = {
+        severity: fullPlan.severity,
+        actionCount: fullPlan.actions.length,
+        topAction: fullPlan.actions.length > 0 ? fullPlan.actions[0].title : null,
+      };
+    }
+
+    return Response.json(response, { headers: getCorsHeaders(request) });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error(`[metrics] Error for merchant ${merchantId}:`, message);

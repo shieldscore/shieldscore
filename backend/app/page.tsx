@@ -3,6 +3,7 @@ import Footer from "./components/Footer";
 import FaqAccordion from "./components/FaqAccordion";
 import AnimateOnScroll from "./components/AnimateOnScroll";
 import CountUp from "./components/CountUp";
+import DashboardMockup from "./components/DashboardMockup";
 
 const FAQ_ITEMS = [
   {
@@ -26,20 +27,6 @@ const FAQ_ITEMS = [
     a: "Yes. No contracts, no commitment. Cancel from the Stripe App Marketplace anytime.",
   },
 ];
-
-function CheckIcon({ muted = false }: { muted?: boolean }) {
-  return (
-    <svg
-      className={`h-4 w-4 shrink-0 ${muted ? "text-[#ccc]" : "text-[#22c55e]"}`}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.5"
-    >
-      <polyline points="20 6 9 17 4 12" />
-    </svg>
-  );
-}
 
 export default function Home() {
   return (
@@ -90,229 +77,7 @@ export default function Home() {
       </section>
 
       {/* ── DASHBOARD MOCKUP ── */}
-      <section className="mt-4 px-6 pb-20 md:pb-24">
-          <div className="mx-auto max-w-[1000px]">
-            <div className="mockup-tilt overflow-hidden rounded-2xl border border-[#e5e5e5] bg-[#f8f8f8] shadow-[0_20px_60px_rgba(0,0,0,0.06)]">
-              {/* Browser chrome */}
-              <div className="flex items-center gap-3 border-b border-[#e5e5e5] bg-[#f8f8f8] px-4 py-2.5">
-                <div className="flex gap-1.5">
-                  <span className="h-[10px] w-[10px] rounded-full bg-[#ff5f57]" />
-                  <span className="h-[10px] w-[10px] rounded-full bg-[#febc2e]" />
-                  <span className="h-[10px] w-[10px] rounded-full bg-[#28c840]" />
-                </div>
-                <div className="flex-1 rounded bg-white px-3 py-1 text-center font-mono text-[11px] text-[#999]">
-                  dashboard.stripe.com/apps/shieldscore
-                </div>
-              </div>
-
-              {/* Dashboard content */}
-              <div className="bg-white p-4 md:p-6">
-                <div className="grid gap-4 md:grid-cols-[1fr_240px]">
-                  {/* Left column */}
-                  <div className="flex flex-col gap-4">
-                    {/* Health score */}
-                    <div className="rounded-xl border border-[#e5e5e5] p-5">
-                      <div className="font-mono text-[11px] font-medium uppercase tracking-wider text-[#999]">
-                        Account Health Score
-                      </div>
-                      <div className="mt-2 flex items-center gap-3">
-                        <span className="font-mono text-[48px] font-bold leading-none tracking-tight text-[#22c55e]">
-                          87
-                        </span>
-                        <span className="rounded-full bg-[#f0fdf4] px-2.5 py-1 text-[11px] font-semibold text-[#16a34a]">
-                          Healthy
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[12px] text-[#bbb]">
-                        Updated 2 minutes ago
-                      </div>
-                    </div>
-
-                    {/* Two metric cards */}
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {/* Dispute ratio */}
-                      <div className="rounded-xl border border-[#e5e5e5] p-4">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#999]">
-                            Dispute ratio
-                          </span>
-                          <span className="rounded bg-[#f0fdf4] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#16a34a]">
-                            Safe
-                          </span>
-                        </div>
-                        <div className="mt-2 font-mono text-[28px] font-bold leading-none text-[#22c55e]">
-                          0.32%
-                        </div>
-                        <div className="relative mt-3 mb-5">
-                          <div className="h-1.5 w-full rounded-full bg-[#f0f0f0]">
-                            <div
-                              className="h-1.5 rounded-full bg-[#22c55e]"
-                              style={{ width: "21%" }}
-                            />
-                          </div>
-                          <div
-                            className="absolute -top-0.5 -bottom-0.5 w-px bg-[#d4d4d4]"
-                            style={{ left: "67%" }}
-                          />
-                          <div
-                            className="absolute top-[10px] -translate-x-1/2 whitespace-nowrap font-mono text-[8px] text-[#bbb]"
-                            style={{ left: "67%" }}
-                          >
-                            VAMP 1.5%
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Fraud ratio */}
-                      <div className="rounded-xl border border-[#e5e5e5] p-4">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#999]">
-                            Fraud ratio
-                          </span>
-                          <span className="rounded bg-[#fefce8] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#a16207]">
-                            Watch
-                          </span>
-                        </div>
-                        <div className="mt-2 font-mono text-[28px] font-bold leading-none text-[#f59e0b]">
-                          0.71%
-                        </div>
-                        <div className="relative mt-3 mb-5">
-                          <div className="h-1.5 w-full rounded-full bg-[#f0f0f0]">
-                            <div
-                              className="h-1.5 rounded-full bg-[#f59e0b]"
-                              style={{ width: "47%" }}
-                            />
-                          </div>
-                          <div
-                            className="absolute -top-0.5 -bottom-0.5 w-px bg-[#d4d4d4]"
-                            style={{ left: "67%" }}
-                          />
-                          <div
-                            className="absolute top-[10px] -translate-x-1/2 whitespace-nowrap font-mono text-[8px] text-[#bbb]"
-                            style={{ left: "67%" }}
-                          >
-                            CMM 1.0%
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Recent activity */}
-                    <div className="rounded-xl border border-[#e5e5e5] p-4">
-                      <div className="mb-3 font-mono text-[10px] font-medium uppercase tracking-wider text-[#999]">
-                        Recent activity
-                      </div>
-                      <div className="flex flex-col gap-2.5">
-                        <div className="flex items-center gap-2.5 text-[13px]">
-                          <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-[#22c55e]" />
-                          <span className="text-[#555]">
-                            Daily health check passed
-                          </span>
-                          <span className="ml-auto font-mono text-[11px] text-[#bbb]">
-                            2m ago
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2.5 text-[13px]">
-                          <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-[#f59e0b]" />
-                          <span className="text-[#555]">
-                            Fraud ratio increased{" "}
-                            <span className="font-mono">0.12%</span>
-                          </span>
-                          <span className="ml-auto font-mono text-[11px] text-[#bbb]">
-                            1h ago
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2.5 text-[13px]">
-                          <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-[#22c55e]" />
-                          <span className="text-[#555]">
-                            No new restrictions
-                          </span>
-                          <span className="ml-auto font-mono text-[11px] text-[#bbb]">
-                            3h ago
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right column */}
-                  <div className="flex flex-col gap-4">
-                    {/* Stat boxes */}
-                    <div className="flex flex-col gap-2">
-                      <div className="rounded-lg border border-[#e5e5e5] px-4 py-3">
-                        <div className="text-[11px] text-[#999]">
-                          Charges (30d)
-                        </div>
-                        <div className="mt-0.5 font-mono text-[18px] font-bold text-[#111]">
-                          12,847
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-[#e5e5e5] px-4 py-3">
-                        <div className="text-[11px] text-[#999]">
-                          Disputes (30d)
-                        </div>
-                        <div className="mt-0.5 font-mono text-[18px] font-bold text-[#111]">
-                          41
-                        </div>
-                      </div>
-                      <div className="rounded-lg border border-[#e5e5e5] px-4 py-3">
-                        <div className="text-[11px] text-[#999]">
-                          Fraud warnings
-                        </div>
-                        <div className="mt-0.5 font-mono text-[18px] font-bold text-[#111]">
-                          7
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Restrictions */}
-                    <div className="rounded-xl border border-[#e5e5e5] p-4">
-                      <div className="flex items-center justify-between">
-                        <span className="font-mono text-[10px] font-medium uppercase tracking-wider text-[#999]">
-                          Restrictions
-                        </span>
-                        <span className="rounded bg-[#f0fdf4] px-1.5 py-0.5 font-mono text-[9px] font-semibold text-[#16a34a]">
-                          Clear
-                        </span>
-                      </div>
-                      <div className="mt-2 font-mono text-[20px] font-bold text-[#22c55e]">
-                        None
-                      </div>
-                      <div className="mt-3 flex flex-col gap-2 text-[12px] text-[#666]">
-                        <div className="flex items-center gap-2">
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="2.5"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          <span>No pending requirements</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <svg
-                            width="12"
-                            height="12"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="#22c55e"
-                            strokeWidth="2.5"
-                          >
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          <span>All capabilities active</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-      </section>
+      <DashboardMockup />
 
       {/* ── SOCIAL PROOF ── */}
       <section className="bg-[#fafafa] px-6 py-12 md:py-20">
@@ -379,71 +144,91 @@ export default function Home() {
       </section>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how-it-works" className="px-6 py-12 md:py-20">
+      <section id="how-it-works" className="bg-[#fafafa] px-6 py-12 md:py-20">
         <AnimateOnScroll>
-          <div className="mx-auto max-w-[1100px]">
+          <div className="mx-auto max-w-[900px]">
             <p className="mb-2 text-center font-mono text-[12px] font-medium uppercase tracking-[0.1em] text-[#999]">
               How it works
             </p>
-            <h2 className="mx-auto mb-14 max-w-[500px] text-center text-[28px] font-bold tracking-[-0.02em] md:text-[40px]">
-              Install. Monitor. Get alerted.
+            <h2 className="mx-auto mb-14 max-w-[600px] text-center text-[28px] font-bold tracking-[-0.02em] md:text-[36px]">
+              Install. Monitor. Get&nbsp;alerted.
             </h2>
 
-            <div className="relative grid gap-12 md:grid-cols-3 md:gap-0">
-              {/* Connector line */}
-              <div className="absolute top-[32px] right-[16.67%] left-[16.67%] hidden h-px bg-[#e5e5e5] md:block" />
+            <div className="grid gap-8 md:grid-cols-3 md:gap-12">
 
-              <div className="relative flex flex-col items-center px-6 text-center">
-                <div className="relative z-10 mb-4 bg-white font-mono text-[64px] font-bold leading-none text-[#e5e5e5]">
-                  01
-                </div>
+              {/* Step 1 */}
+              <div>
+                <svg width="28" height="30" viewBox="-1 -1 26 28" fill="none" className="mb-3">
+                  <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" fill="#22c55e" opacity="0.15" />
+                  <path d="M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5z" stroke="#22c55e" strokeWidth="1.5" strokeLinejoin="round" />
+                  <path d="M9 12l2 2 4-4" stroke="#22c55e" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
                 <h3 className="mb-2 text-[18px] font-bold text-[#111]">
                   Install from Stripe
                 </h3>
-                <p className="max-w-[260px] text-[15px] leading-[1.6] text-[#888]">
-                  One click from the Stripe App Marketplace. Grant read-only
-                  access to disputes, charges, and account status.
+                <p className="text-[14px] leading-[1.6] text-[#888]">
+                  One click from the Marketplace. Read-only access to disputes, charges, and account status.
                 </p>
+                <div className="mt-4">
+                  <span className="inline-block rounded-full bg-[#f0fdf4] px-2.5 py-0.5 font-mono text-[11px] font-medium text-[#22c55e]">
+                    read-only
+                  </span>
+                </div>
               </div>
 
-              <div className="relative flex flex-col items-center px-6 text-center">
-                <div className="relative z-10 mb-4 bg-white font-mono text-[64px] font-bold leading-none text-[#e5e5e5]">
-                  02
-                </div>
+              {/* Step 2 */}
+              <div>
+                <svg width="28" height="28" viewBox="-1 -1 26 26" fill="none" className="mb-3">
+                  <circle cx="12" cy="12" r="10" stroke="#6b7280" strokeWidth="1.5" opacity="0.25" />
+                  <path d="M12 12L12 6" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M12 12L16.5 15.5" stroke="#111" strokeWidth="1.5" strokeLinecap="round" />
+                  <circle cx="12" cy="12" r="1.5" fill="#111" />
+                  <path d="M4.93 4.93A10 10 0 0119.07 4.93" stroke="#111" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
                 <h3 className="mb-2 text-[18px] font-bold text-[#111]">
                   See your ratios
                 </h3>
-                <p className="max-w-[260px] text-[15px] leading-[1.6] text-[#888]">
-                  Your VAMP and ECM ratios calculated from the rolling 30-day
-                  window. Health score from{" "}
-                  <span className="font-mono">0</span> to{" "}
-                  <span className="font-mono">100</span>.
+                <p className="text-[14px] leading-[1.6] text-[#888]">
+                  VAMP and ECM ratios from the rolling 30-day window. Health score from 0 to 100.
                 </p>
+                <div className="mt-4 flex items-center gap-2">
+                  <span className="inline-block rounded-full bg-[#f0fdf4] px-2.5 py-0.5 font-mono text-[11px] font-medium text-[#22c55e]">
+                    0.91%
+                  </span>
+                  <span className="inline-block rounded-full bg-[#fff7ed] px-2.5 py-0.5 font-mono text-[11px] font-medium text-[#f59e0b]">
+                    55/100
+                  </span>
+                </div>
               </div>
 
-              <div className="relative flex flex-col items-center px-6 text-center">
-                <div className="relative z-10 mb-4 bg-white font-mono text-[64px] font-bold leading-none text-[#e5e5e5]">
-                  03
-                </div>
+              {/* Step 3 */}
+              <div>
+                <svg width="28" height="28" viewBox="-1 -1 26 26" fill="none" className="mb-3">
+                  <path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9z" stroke="#111" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M13.73 21a2 2 0 01-3.46 0" stroke="#111" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <circle cx="18" cy="4" r="3" fill="#ef4444" />
+                </svg>
                 <h3 className="mb-2 text-[18px] font-bold text-[#111]">
                   Get alerted
                 </h3>
-                <p className="max-w-[260px] text-[15px] leading-[1.6] text-[#888]">
-                  Email alerts when ratios cross{" "}
-                  <span className="font-mono">0.5%</span>,{" "}
-                  <span className="font-mono">0.75%</span>,{" "}
-                  <span className="font-mono">1.0%</span>, or{" "}
-                  <span className="font-mono">1.5%</span>. Or when Stripe
-                  silently flags your account.
+                <p className="text-[14px] leading-[1.6] text-[#888]">
+                  Email when ratios cross 0.5%, 0.75%, 1.0%, or 1.5%. Or when Stripe silently flags your account.
                 </p>
+                <div className="mt-4">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#fff7ed] px-2.5 py-0.5 font-mono text-[11px] font-medium text-[#ea580c]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#ef4444]" />
+                    Alert sent
+                  </span>
+                </div>
               </div>
+
             </div>
           </div>
         </AnimateOnScroll>
       </section>
 
       {/* ── FEATURES ── */}
-      <section id="features" className="bg-[#fafafa] px-6 py-12 md:py-20">
+      <section id="features" className="px-6 py-12 md:py-20">
         <div className="mx-auto max-w-[1100px]">
           <AnimateOnScroll>
             <p className="mb-2 font-mono text-[12px] font-medium uppercase tracking-[0.1em] text-[#999]">
@@ -551,31 +336,35 @@ export default function Home() {
             </AnimateOnScroll>
           </div>
 
-          {/* ── NEW: Actionable intelligence features ── */}
+        </div>
+      </section>
+
+      {/* ── ACTIONABLE INTELLIGENCE ── */}
+      <section className="bg-[#fafafa] px-6 py-[60px]">
+        <div className="mx-auto max-w-[800px]">
           <AnimateOnScroll>
-            <p className="mt-16 mb-2 font-mono text-[12px] font-medium uppercase tracking-[0.1em] text-[#999]">
+            <p className="mb-2 font-mono text-[12px] font-medium uppercase tracking-[0.1em] text-[#999]">
               Actionable intelligence
             </p>
-            <h2 className="mb-10 text-[28px] font-bold tracking-[-0.02em] md:text-[36px]">
+            <h2 className="mb-12 text-[28px] font-bold tracking-[-0.02em] md:text-[36px]">
               Go beyond monitoring
             </h2>
           </AnimateOnScroll>
 
-          {/* Two-column hero row: trends + threshold countdown */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <AnimateOnScroll delay={0}>
-              <div className="flex h-full flex-col rounded-xl border border-[#e8e8e8] bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.03)]">
-                <h3 className="mb-2.5 text-[16px] font-bold text-[#111]">
-                  7-day trend tracking
-                </h3>
-                <p className="text-[14px] leading-[1.65] text-[#777]">
-                  See whether your dispute ratio, fraud ratio, and decline rate
-                  are trending up, down, or flat over the last 7 days. Every
-                  metric shows a direction arrow and the exact delta so you can
-                  spot problems before they become thresholds.
-                </p>
-                {/* Mini visualization */}
-                <div className="mt-auto flex items-end gap-6 pt-6">
+          <div className="flex flex-col gap-10">
+
+            {/* Row 1: text left, data right */}
+            <AnimateOnScroll>
+              <div className="grid items-start gap-8 md:grid-cols-[55%_45%] md:gap-10">
+                <div>
+                  <h3 className="mb-3 text-[22px] font-bold text-[#111]">
+                    7-day trend tracking
+                  </h3>
+                  <p className="text-[14px] leading-[1.5] text-[#777]">
+                    See whether your dispute ratio, fraud ratio, and decline rate are trending up, down, or flat. Every metric shows a direction arrow and the exact delta so you can spot problems early.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-4">
                   <div>
                     <div className="font-mono text-[10px] uppercase tracking-wider text-[#999]">
                       Dispute ratio
@@ -600,281 +389,181 @@ export default function Home() {
                       <span className="font-mono text-[22px] font-bold text-[#f59e0b]">
                         0.71%
                       </span>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5">
                         <path d="M6 6L18 18M18 18V8M18 18H8" />
                       </svg>
                     </div>
-                    <div className="font-mono text-[11px] text-[#f59e0b]">
+                    <div className="font-mono text-[11px] text-[#ef4444]">
                       +0.12% this week
                     </div>
                   </div>
                 </div>
               </div>
             </AnimateOnScroll>
-            <AnimateOnScroll delay={100}>
-              <div className="flex h-full flex-col rounded-xl border border-[#e8e8e8] bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.03)]">
-                <h3 className="mb-2.5 text-[16px] font-bold text-[#111]">
-                  Threshold countdown
-                </h3>
-                <p className="text-[14px] leading-[1.65] text-[#777]">
-                  Based on your current trend velocity, ShieldScore projects how
-                  many days until you hit each card network threshold. If your
-                  ratio is climbing, you&apos;ll know exactly how long you have
-                  to act.
-                </p>
-                {/* Mini visualization */}
-                <div className="mt-auto flex flex-col gap-3 pt-6">
-                  <div className="flex items-center justify-between rounded-lg border border-[#e5e5e5] px-4 py-2.5">
-                    <span className="text-[13px] text-[#666]">
-                      Mastercard CMM{" "}
-                      <span className="font-mono text-[#999]">1.0%</span>
-                    </span>
-                    <span className="font-mono text-[15px] font-bold text-[#f59e0b]">
-                      47 days
-                    </span>
+
+            <div className="h-px bg-[#e5e7eb]" />
+
+            {/* Row 2: data left, text right */}
+            <AnimateOnScroll>
+              <div className="grid items-start gap-8 md:grid-cols-[45%_55%] md:gap-10">
+                <div className="order-2 md:order-1">
+                  <div className="flex flex-col">
+                    <div className="flex items-center justify-between border-b border-[#e5e5e5] py-3">
+                      <span className="text-[13px] text-[#666]">
+                        Mastercard CMM <span className="font-mono text-[#999]">1.0%</span>
+                      </span>
+                      <span className="font-mono text-[15px] font-bold text-[#22c55e]">
+                        47 days
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between border-b border-[#e5e5e5] py-3">
+                      <span className="text-[13px] text-[#666]">
+                        Visa VAMP <span className="font-mono text-[#999]">1.5%</span>
+                      </span>
+                      <span className="font-mono text-[15px] font-bold text-[#22c55e]">
+                        112 days
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-3">
+                      <span className="text-[13px] text-[#666]">
+                        Visa enumeration <span className="font-mono text-[#999]">20%</span>
+                      </span>
+                      <span className="font-mono text-[15px] font-bold text-[#999]">
+                        N/A
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center justify-between rounded-lg border border-[#e5e5e5] px-4 py-2.5">
-                    <span className="text-[13px] text-[#666]">
-                      Visa VAMP{" "}
-                      <span className="font-mono text-[#999]">1.5%</span>
-                    </span>
-                    <span className="font-mono text-[15px] font-bold text-[#22c55e]">
-                      112 days
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between rounded-lg border border-[#e5e5e5] px-4 py-2.5">
-                    <span className="text-[13px] text-[#666]">
-                      Visa enumeration{" "}
-                      <span className="font-mono text-[#999]">20%</span>
-                    </span>
-                    <span className="font-mono text-[15px] font-bold text-[#999]">
-                      &mdash;
-                    </span>
-                  </div>
+                </div>
+                <div className="order-1 md:order-2">
+                  <h3 className="mb-3 text-[22px] font-bold text-[#111]">
+                    Threshold countdown
+                  </h3>
+                  <p className="text-[14px] leading-[1.5] text-[#777]">
+                    Based on your current trend velocity, ShieldScore projects how many days until you hit each card network threshold. If your ratio is climbing, you know exactly how long you have to act.
+                  </p>
                 </div>
               </div>
             </AnimateOnScroll>
-          </div>
 
-          {/* Three-column row: disputes, guidance, benchmarks */}
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <AnimateOnScroll delay={0}>
-              <div className="flex h-full flex-col rounded-xl border border-[#e8e8e8] bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.03)]">
-                <h3 className="mb-2.5 text-[16px] font-bold text-[#111]">
-                  Per-dispute breakdown
-                </h3>
-                <p className="text-[14px] leading-[1.65] text-[#777]">
-                  See every recent dispute with the amount, reason code, and
-                  exactly how much it moved your ratio. Know which disputes
-                  are costing you the most and prioritize your responses.
-                </p>
-                {/* Mini visualization */}
-                <div className="mt-auto flex flex-col gap-2 pt-6">
-                  <div className="flex items-center justify-between rounded border border-[#f0f0f0] px-3 py-2">
+            <div className="h-px bg-[#e5e7eb]" />
+
+            {/* Row 3: text left, data right */}
+            <AnimateOnScroll>
+              <div className="grid items-start gap-8 md:grid-cols-[55%_45%] md:gap-10">
+                <div>
+                  <h3 className="mb-3 text-[22px] font-bold text-[#111]">
+                    Per-dispute breakdown
+                  </h3>
+                  <p className="text-[14px] leading-[1.5] text-[#777]">
+                    See every recent dispute with the amount, reason code, and exactly how much it moved your ratio. Know which disputes cost the most and prioritize your responses.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between py-2">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-[#ef4444]" />
-                      <span className="font-mono text-[12px] text-[#555]">
+                      <span className="font-mono text-[13px] text-[#555]">
                         $249.00
                       </span>
                     </div>
-                    <span className="font-mono text-[11px] text-[#999]">
+                    <span className="font-mono text-[12px] text-[#999]">
                       +0.008%
                     </span>
                   </div>
-                  <div className="flex items-center justify-between rounded border border-[#f0f0f0] px-3 py-2">
+                  <div className="flex items-center justify-between py-2">
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-[#f59e0b]" />
-                      <span className="font-mono text-[12px] text-[#555]">
+                      <span className="font-mono text-[13px] text-[#555]">
                         $89.00
                       </span>
                     </div>
-                    <span className="font-mono text-[11px] text-[#999]">
+                    <span className="font-mono text-[12px] text-[#999]">
                       +0.008%
                     </span>
                   </div>
                 </div>
               </div>
             </AnimateOnScroll>
-            <AnimateOnScroll delay={100}>
-              <div className="flex h-full flex-col rounded-xl border border-[#e8e8e8] bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.03)]">
-                <h3 className="mb-2.5 text-[16px] font-bold text-[#111]">
-                  Dispute response guidance
-                </h3>
-                <p className="text-[14px] leading-[1.65] text-[#777]">
-                  Every dispute comes with tailored advice based on the reason
-                  code: what evidence to submit, which Stripe fields to fill,
-                  and your estimated win rate. Stop guessing, start winning.
-                </p>
-                {/* Mini visualization */}
-                <div className="mt-auto pt-6">
-                  <div className="rounded-lg border border-[#e5e5e5] p-3">
+
+            <div className="h-px bg-[#e5e7eb]" />
+
+            {/* Row 4: data left, text right */}
+            <AnimateOnScroll>
+              <div className="grid items-start gap-8 md:grid-cols-[45%_55%] md:gap-10">
+                <div className="order-2 md:order-1">
+                  <div>
                     <div className="flex items-center justify-between">
-                      <span className="font-mono text-[11px] font-semibold text-[#111]">
+                      <span className="font-mono text-[12px] font-semibold text-[#111]">
                         product_not_received
                       </span>
                       <span className="rounded bg-[#f0fdf4] px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#16a34a]">
                         ~70% win
                       </span>
                     </div>
-                    <p className="mt-1.5 text-[11px] leading-[1.5] text-[#888]">
-                      Submit tracking number, carrier, and delivery
-                      confirmation...
+                    <p className="mt-2 text-[12px] leading-[1.5] text-[#888]">
+                      Submit tracking number, carrier, and delivery confirmation.
                     </p>
                   </div>
                 </div>
+                <div className="order-1 md:order-2">
+                  <h3 className="mb-3 text-[22px] font-bold text-[#111]">
+                    Dispute response guidance
+                  </h3>
+                  <p className="text-[14px] leading-[1.5] text-[#777]">
+                    Every dispute comes with tailored advice based on the reason code: what evidence to submit, which Stripe fields to fill, and your estimated win rate.
+                  </p>
+                </div>
               </div>
             </AnimateOnScroll>
-            <AnimateOnScroll delay={200}>
-              <div className="flex h-full flex-col rounded-xl border border-[#e8e8e8] bg-white p-8 shadow-[0_1px_4px_rgba(0,0,0,0.03)]">
-                <h3 className="mb-2.5 text-[16px] font-bold text-[#111]">
-                  Industry benchmarks
-                </h3>
-                <p className="text-[14px] leading-[1.65] text-[#777]">
-                  Compare your dispute ratio against the average for your
-                  industry. Know whether you&apos;re performing better or worse
-                  than peers in e-commerce, SaaS, subscriptions, or travel.
-                </p>
-                {/* Mini visualization */}
-                <div className="mt-auto pt-6">
-                  <div className="flex items-center gap-3 rounded-lg border border-[#e5e5e5] p-3">
-                    <div className="flex-1">
+
+            <div className="h-px bg-[#e5e7eb]" />
+
+            {/* Row 5: text left, data right */}
+            <AnimateOnScroll>
+              <div className="grid items-start gap-8 md:grid-cols-[55%_45%] md:gap-10">
+                <div>
+                  <h3 className="mb-3 text-[22px] font-bold text-[#111]">
+                    Industry benchmarks
+                  </h3>
+                  <p className="text-[14px] leading-[1.5] text-[#777]">
+                    Compare your dispute ratio against the average for your industry. Know whether you are performing better or worse than peers in e-commerce, SaaS, subscriptions, or travel.
+                  </p>
+                </div>
+                <div>
+                  <div className="flex items-center gap-8">
+                    <div>
                       <div className="font-mono text-[10px] uppercase tracking-wider text-[#999]">
                         Your ratio
                       </div>
-                      <div className="font-mono text-[18px] font-bold text-[#22c55e]">
+                      <div className="font-mono text-[20px] font-bold text-[#22c55e]">
                         0.32%
                       </div>
                     </div>
                     <div className="h-8 w-px bg-[#e5e5e5]" />
-                    <div className="flex-1">
+                    <div>
                       <div className="font-mono text-[10px] uppercase tracking-wider text-[#999]">
                         Industry avg
                       </div>
-                      <div className="font-mono text-[18px] font-bold text-[#999]">
+                      <div className="font-mono text-[20px] font-bold text-[#999]">
                         0.60%
                       </div>
                     </div>
                   </div>
-                  <div className="mt-2 text-center font-mono text-[11px] font-semibold text-[#22c55e]">
-                    Below average &mdash; you&apos;re outperforming
+                  <div className="mt-2 font-mono text-[11px] font-semibold text-[#22c55e]">
+                    Below average. You are outperforming.
                   </div>
                 </div>
               </div>
             </AnimateOnScroll>
+
           </div>
         </div>
       </section>
 
-      {/* ── PRICING ── */}
-      <section id="pricing" className="px-6 py-12 md:py-20">
-        <AnimateOnScroll>
-          <div className="mx-auto max-w-[1100px]">
-            <p className="mb-2 text-center font-mono text-[12px] font-medium uppercase tracking-[0.1em] text-[#999]">
-              Pricing
-            </p>
-            <h2 className="mb-3 text-center text-[28px] font-bold tracking-[-0.02em] text-[#111] md:text-[40px]">
-              Free to start. Upgrade when you need more.
-            </h2>
-            <p className="mx-auto mb-14 max-w-[440px] text-center text-[15px] leading-[1.7] text-[#888]">
-              Monitor your account health at no cost. We never touch your funds. Cancel anytime.
-            </p>
-
-            <div className="mx-auto grid max-w-[800px] gap-5 md:grid-cols-2">
-              {/* Monitor */}
-              <div className="pricing-hover rounded-2xl border border-[#e5e5e5] border-t-[3px] border-t-[#22c55e] bg-white p-8 shadow-[0_4px_16px_rgba(0,0,0,0.04)]">
-                <div className="mb-1 text-[15px] font-medium text-[#555]">
-                  Monitor
-                </div>
-                <div className="mb-1 text-[#111]">
-                  <span className="font-mono text-[48px] font-bold">Free</span>
-                </div>
-                <div className="mb-7 text-[14px] text-[#888]">
-                  Everything you need to monitor your account health
-                </div>
-                <ul className="mb-7 list-none space-y-0">
-                  {[
-                    "Real-time VAMP, CMM & ECM tracking",
-                    "Composite health score (0 to 100)",
-                    "Hidden restriction email alerts",
-                    "Daily health score updates",
-                    "30-day trend history",
-                  ].map((f) => (
-                    <li
-                      key={f}
-                      className="flex items-center gap-2.5 border-b border-[#f0f0f0] py-2.5 text-[14px] text-[#555]"
-                    >
-                      <CheckIcon />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  href="https://marketplace.stripe.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-hover flex w-full items-center justify-center rounded-lg bg-[#111] py-3.5 text-[15px] font-semibold text-white no-underline"
-                >
-                  Install free from Stripe
-                </a>
-              </div>
-
-              {/* Defend */}
-              <div className="pricing-hover relative rounded-2xl border border-[#e5e5e5] bg-white p-8">
-                <span className="absolute -top-[11px] left-1/2 -translate-x-1/2 rounded-full bg-[#999] px-3.5 py-[3px] text-[11px] font-semibold uppercase tracking-[0.04em] text-white">
-                  Coming soon
-                </span>
-                <div className="mb-1 text-[15px] font-medium text-[#555]">
-                  Defend
-                </div>
-                <div className="mb-1">
-                  <span className="font-mono text-[48px] font-bold text-[#bbb]">
-                    $59
-                  </span>
-                  <span className="text-base font-normal text-[#ccc]">
-                    /mo
-                  </span>
-                </div>
-                <div className="mb-7 text-[14px] text-[#888]">
-                  Full defense system for scaling businesses
-                </div>
-                <ul className="mb-7 list-none space-y-0">
-                  {[
-                    "Everything in Monitor",
-                    "Slack & SMS instant alerts",
-                    "Velocity anomaly detection",
-                    "Remediation plan generator",
-                    "90-day trend history & exports",
-                    "Suggested refund alerts",
-                  ].map((f) => (
-                    <li
-                      key={f}
-                      className="flex items-center gap-2.5 border-b border-[#f0f0f0] py-2.5 text-[14px] text-[#999]"
-                    >
-                      <CheckIcon muted />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <div className="flex w-full cursor-not-allowed items-center justify-center rounded-lg border border-[#e5e5e5] py-3.5 text-[15px] font-semibold text-[#bbb]">
-                  Coming soon
-                </div>
-              </div>
-            </div>
-
-            <p className="mt-8 text-center text-[13px] text-[#aaa]">
-              Cancel anytime. Read-only access. We never touch your funds.
-            </p>
-          </div>
-        </AnimateOnScroll>
-      </section>
-
       {/* ── FAQ ── */}
-      <section id="faq" className="border-t border-[#f0f0f0] px-6 py-12 md:py-20">
+      <section id="faq" className="border-t border-[#e5e7eb] px-6 py-12 md:py-20">
         <AnimateOnScroll>
           <div className="mx-auto max-w-[640px]">
-            <p className="mb-2 text-center font-mono text-[12px] font-medium uppercase tracking-[0.1em] text-[#999]">
-              FAQ
-            </p>
             <h2 className="mb-8 text-center text-[28px] font-bold tracking-[-0.02em] md:text-[32px]">
               Common questions
             </h2>
@@ -884,13 +573,13 @@ export default function Home() {
       </section>
 
       {/* ── FINAL CTA ── */}
-      <section className="bg-[#fafafa] px-6 py-12 md:py-20">
+      <section className="border-t border-[#e5e7eb] bg-[#fafafa] px-6 py-12 md:py-20">
         <AnimateOnScroll>
           <div className="mx-auto max-w-[500px] text-center">
             <h2 className="text-[28px] font-bold leading-[1.15] tracking-[-0.02em] text-[#111] md:text-[36px]">
               Don&apos;t find out the hard way.
             </h2>
-            <p className="mt-3 text-[15px] leading-[1.7] text-[#888]">
+            <p className="mt-3 text-[15px] leading-[1.7] text-[#6b7280]">
               Start monitoring your Stripe account health. Takes 60 seconds.
             </p>
             <a
@@ -901,8 +590,8 @@ export default function Home() {
             >
               Install from Stripe
             </a>
-            <p className="mt-4 font-mono text-[12px] text-[#999]">
-              Read-only access. Free. Cancel anytime.
+            <p className="mt-4 font-mono text-[13px] text-[#6b7280]">
+              Read-only access. Free to start. Cancel anytime.
             </p>
           </div>
         </AnimateOnScroll>

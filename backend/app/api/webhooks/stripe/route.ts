@@ -81,7 +81,7 @@ export async function POST(request: Request): Promise<Response> {
   // Find or skip merchant
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('id, email, phone, alert_preferences')
+    .select('id, email, phone, alert_preferences, plan')
     .eq('stripe_account_id', stripeAccountId)
     .single();
 
@@ -116,6 +116,17 @@ export async function POST(request: Request): Promise<Response> {
           merchant.id,
           event.data.object as Stripe.Account
         );
+        break;
+
+      // TODO: The exact webhook event types for Stripe App Marketplace plan changes
+      // will depend on how Stripe's marketplace billing sends plan change notifications.
+      // Wire this up once the app is approved and we can test the actual webhook events.
+      // Likely candidates: 'customer.subscription.created', 'customer.subscription.updated',
+      // 'customer.subscription.deleted', or marketplace-specific event types.
+      case 'customer.subscription.created':
+      case 'customer.subscription.updated':
+      case 'customer.subscription.deleted':
+        await handlePlanChange(merchant.id, event);
         break;
 
       default:
@@ -213,13 +224,14 @@ async function handleDisputeCreated(merchantId: string): Promise<void> {
   // Check and send alerts
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('email, phone, alert_preferences')
+    .select('email, phone, alert_preferences, plan')
     .eq('id', merchantId)
     .single();
 
   if (merchant) {
     await checkAndSendAlerts({
       merchantId,
+      plan: (merchant.plan as string) ?? 'free',
       email: merchant.email,
       phone: merchant.phone ?? null,
       vampRatio: calculated.vampRatio,
@@ -298,13 +310,14 @@ async function handleFraudWarning(merchantId: string): Promise<void> {
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('email, phone, alert_preferences')
+    .select('email, phone, alert_preferences, plan')
     .eq('id', merchantId)
     .single();
 
   if (merchant) {
     await checkAndSendAlerts({
       merchantId,
+      plan: (merchant.plan as string) ?? 'free',
       email: merchant.email,
       phone: merchant.phone ?? null,
       vampRatio: calculated.vampRatio,
@@ -455,11 +468,12 @@ async function handleAccountUpdated(
 
   const { data: merchant } = await supabase
     .from('merchants')
-    .select('email, phone, alert_preferences')
+    .select('email, phone, alert_preferences, plan')
     .eq('id', merchantId)
     .single();
 
   if (merchant) {
+    const merchantPlan = (merchant.plan as string) ?? 'free';
     const prefs = merchant.alert_preferences ?? {
       email: true,
       slack: false,
@@ -481,6 +495,7 @@ async function handleAccountUpdated(
     if (hasRestrictions) {
       await sendRestrictionAlert({
         merchantId,
+        plan: merchantPlan,
         email: merchant.email,
         phone: merchant.phone ?? null,
         requirements: reqList,
@@ -492,6 +507,7 @@ async function handleAccountUpdated(
     // Also run the general threshold check
     await checkAndSendAlerts({
       merchantId,
+      plan: merchantPlan,
       email: merchant.email,
       phone: merchant.phone ?? null,
       vampRatio: latestMetrics?.fraud_ratio ?? 0,
@@ -509,4 +525,67 @@ async function handleAccountUpdated(
       alertPreferences: prefs,
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Plan change handler
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a Stripe Marketplace subscription to a ShieldScore plan name.
+ *
+ * TODO: Update the price ID mapping once the app is approved and actual
+ * Stripe price IDs are created in the marketplace. For now, this uses
+ * a placeholder mapping based on the subscription's price metadata or
+ * amount to determine the plan tier.
+ */
+function resolvePlanFromSubscription(subscription: Stripe.Subscription): 'free' | 'pro' | 'defend' {
+  if (subscription.status === 'canceled' || subscription.status === 'unpaid') {
+    return 'free';
+  }
+
+  const items = subscription.items?.data ?? [];
+  if (items.length === 0) return 'free';
+
+  const priceId = items[0].price?.id ?? '';
+
+  // TODO: Replace these placeholder price IDs with actual marketplace price IDs
+  // once the app is published and plans are configured in Stripe.
+  const PRICE_TO_PLAN: Record<string, 'pro' | 'defend'> = {
+    // Monthly
+    [process.env.STRIPE_PRICE_PRO_MONTHLY ?? 'price_pro_monthly']: 'pro',
+    [process.env.STRIPE_PRICE_DEFEND_MONTHLY ?? 'price_defend_monthly']: 'defend',
+    // Annual
+    [process.env.STRIPE_PRICE_PRO_ANNUAL ?? 'price_pro_annual']: 'pro',
+    [process.env.STRIPE_PRICE_DEFEND_ANNUAL ?? 'price_defend_annual']: 'defend',
+  };
+
+  return PRICE_TO_PLAN[priceId] ?? 'free';
+}
+
+/**
+ * Handle subscription changes from the Stripe App Marketplace.
+ * Updates the merchant's plan in the database.
+ */
+async function handlePlanChange(
+  merchantId: string,
+  event: Stripe.Event
+): Promise<void> {
+  const subscription = event.data.object as Stripe.Subscription;
+  const newPlan = resolvePlanFromSubscription(subscription);
+
+  const { error } = await supabase
+    .from('merchants')
+    .update({
+      plan: newPlan,
+      plan_updated_at: new Date().toISOString(),
+    })
+    .eq('id', merchantId);
+
+  if (error) {
+    console.error(`[webhook] Failed to update plan for merchant ${merchantId}:`, error.message);
+    return;
+  }
+
+  console.log(`[webhook] Updated merchant ${merchantId} plan to '${newPlan}'`);
 }

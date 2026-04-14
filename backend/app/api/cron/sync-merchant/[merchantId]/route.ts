@@ -32,7 +32,7 @@ export async function GET(
   // Fetch merchant
   const { data: merchant, error: merchantError } = await supabase
     .from('merchants')
-    .select('id, stripe_account_id, email, phone, alert_preferences')
+    .select('id, stripe_account_id, email, phone, alert_preferences, plan')
     .eq('id', merchantId)
     .single();
 
@@ -63,8 +63,11 @@ export async function GET(
       sms: false,
     };
 
+    const merchantPlan = (merchant.plan as string) ?? 'free';
+
     await checkAndSendAlerts({
       merchantId: merchant.id,
+      plan: merchantPlan,
       email: merchant.email,
       phone: merchant.phone ?? null,
       vampRatio: metrics.vampRatio,
@@ -90,7 +93,8 @@ export async function GET(
         merchant.email,
         merchant.phone ?? null,
         prefs,
-        anomalyReport
+        anomalyReport,
+        merchantPlan
       );
     }
 

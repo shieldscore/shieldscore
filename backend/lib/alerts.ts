@@ -18,6 +18,7 @@ import {
 } from './sms-templates';
 import { velocitySpike } from './email-templates';
 import type { AnomalyReport } from './velocity';
+import { normalizePlan, meetsMinimumPlan, type PlanName } from './plan-gates';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +32,7 @@ interface AlertPreferences {
 
 interface AlertInput {
   merchantId: string;
+  plan: string;
   email: string | null;
   phone: string | null;
   vampRatio: number;
@@ -50,6 +52,7 @@ interface AlertInput {
 
 interface RestrictionAlertInput {
   merchantId: string;
+  plan: string;
   email: string | null;
   phone: string | null;
   requirements: string[];
@@ -202,6 +205,11 @@ async function sendAlertEmail(
  * was already sent in the last 24 hours.
  */
 export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
+  const merchantPlan = normalizePlan(input.plan);
+
+  // Free plan: no alerts sent (data visible in dashboard only)
+  if (!meetsMinimumPlan(merchantPlan, 'pro')) return;
+
   const triggered = getTriggeredAlerts(
     input.vampRatio,
     input.mcDisputeRatio,
@@ -210,6 +218,9 @@ export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
   );
 
   if (triggered.length === 0) return;
+
+  const canSendEmail = meetsMinimumPlan(merchantPlan, 'pro');
+  const canSendSMS = meetsMinimumPlan(merchantPlan, 'defend');
 
   for (const alert of triggered) {
     // Deduplicate: skip if same alert type + severity sent in last 24h
@@ -226,8 +237,8 @@ export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
 
     const deliveredVia: string[] = [];
 
-    // Send email alert
-    if (input.alertPreferences.email && input.email) {
+    // Send email alert (pro+ only)
+    if (canSendEmail && input.alertPreferences.email && input.email) {
       const template = resolveTemplate(alert.type, alert.severity, input);
       if (template) {
         const sent = await sendAlertEmail(input.email, template);
@@ -235,8 +246,9 @@ export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
       }
     }
 
-    // Send SMS alert (warning and critical only, if enabled)
+    // Send SMS alert (defend only, warning and critical)
     if (
+      canSendSMS &&
       input.alertPreferences.sms &&
       input.phone &&
       (alert.severity === 'warning' || alert.severity === 'critical')
@@ -265,8 +277,16 @@ export async function checkAndSendAlerts(input: AlertInput): Promise<void> {
  * when account.updated fires with new requirements or capability changes.
  */
 export async function sendRestrictionAlert(input: RestrictionAlertInput): Promise<void> {
-  const hasEmail = input.email && input.alertPreferences.email;
-  const hasSMS = input.phone && input.alertPreferences.sms;
+  const merchantPlan = normalizePlan(input.plan);
+
+  // Free plan: no alerts
+  if (!meetsMinimumPlan(merchantPlan, 'pro')) return;
+
+  const canSendEmail = meetsMinimumPlan(merchantPlan, 'pro');
+  const canSendSMS = meetsMinimumPlan(merchantPlan, 'defend');
+
+  const hasEmail = canSendEmail && input.email && input.alertPreferences.email;
+  const hasSMS = canSendSMS && input.phone && input.alertPreferences.sms;
   if (!hasEmail && !hasSMS) return;
   if (input.requirements.length === 0 && input.capabilities.length === 0) return;
 
@@ -283,7 +303,7 @@ export async function sendRestrictionAlert(input: RestrictionAlertInput): Promis
 
   const deliveredVia: string[] = [];
 
-  // Send email
+  // Send email (pro+)
   if (hasEmail && input.email) {
     const template = restrictionDetected({
       requirements: input.requirements,
@@ -294,7 +314,7 @@ export async function sendRestrictionAlert(input: RestrictionAlertInput): Promis
     if (sent) deliveredVia.push('email');
   }
 
-  // Send SMS (restrictions are always critical)
+  // Send SMS (defend only, restrictions are always critical)
   if (hasSMS && input.phone) {
     const sent = await sendSMS(input.phone, restrictionSMS());
     if (sent) deliveredVia.push('sms');
@@ -319,9 +339,15 @@ export async function sendVelocityAlert(
   email: string | null,
   phone: string | null,
   alertPreferences: AlertPreferences,
-  report: AnomalyReport
+  report: AnomalyReport,
+  plan: string = 'free'
 ): Promise<void> {
   if (report.overallStatus === 'normal') return;
+
+  const merchantPlan = normalizePlan(plan);
+
+  // Velocity alerts are a defend-only feature
+  if (!meetsMinimumPlan(merchantPlan, 'defend')) return;
 
   const hasEmail = email && alertPreferences.email;
   const hasSMS = phone && alertPreferences.sms;
