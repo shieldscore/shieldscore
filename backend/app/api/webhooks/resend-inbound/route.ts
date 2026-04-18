@@ -3,100 +3,73 @@ import { resend } from '@/lib/resend';
 export const dynamic = 'force-dynamic';
 
 const FORWARD_TO = 'shieldscoreapp@gmail.com';
-const WEBHOOK_SECRET = process.env.RESEND_WEBHOOK_SECRET;
-
-interface ResendInboundEmail {
-  from: string;
-  to: string[];
-  subject: string;
-  text: string;
-  html: string;
-  reply_to?: string[];
-  headers?: Record<string, string>;
-  attachments?: Array<{
-    filename: string;
-    content: string;
-    content_type: string;
-  }>;
-}
-
-interface ResendWebhookPayload {
-  type: string;
-  data: ResendInboundEmail;
-}
 
 export async function POST(request: Request): Promise<Response> {
   try {
     const rawBody = await request.text();
-    console.log('[inbound-email] Received webhook:', rawBody.slice(0, 500));
+    console.log('[inbound-email] Raw payload:', rawBody.slice(0, 2000));
 
-    let body: ResendWebhookPayload;
+    let body: Record<string, unknown>;
     try {
-      body = JSON.parse(rawBody) as ResendWebhookPayload;
+      body = JSON.parse(rawBody);
     } catch {
       console.error('[inbound-email] Failed to parse JSON');
       return Response.json({ error: 'Invalid JSON' }, { status: 400 });
     }
 
-    console.log('[inbound-email] Event type:', body.type);
-    console.log('[inbound-email] Data keys:', body.data ? Object.keys(body.data) : 'no data');
-    console.log('[inbound-email] Full data:', JSON.stringify(body.data).slice(0, 1000));
+    // Resend wraps inbound emails in { type, created_at, data: { ... } }
+    const data = (body.data || body) as Record<string, unknown>;
+    console.log('[inbound-email] Top-level keys:', Object.keys(body));
+    console.log('[inbound-email] Data keys:', Object.keys(data));
 
-    // Only process inbound email events
-    if (body.type && body.type !== 'email.received') {
-      console.log('[inbound-email] Ignoring event type:', body.type);
-      return Response.json({ received: true });
-    }
+    // Extract fields -- try multiple possible field names
+    const from = (data.from as string) || 'unknown@unknown.com';
+    const to = (data.to as string[]) || ['hello@shieldscore.io'];
+    const subject = (data.subject as string) || '';
+    const text = (data.text as string) || (data.plain_text as string) || (data.body as string) || '';
+    const html = (data.html as string) || (data.html_body as string) || '';
 
-    const email = body.data;
-    if (!email || !email.from) {
-      console.error('[inbound-email] Missing required fields. Keys received:', email ? Object.keys(email) : 'no data');
-      return Response.json({ error: 'Invalid payload' }, { status: 400 });
-    }
+    console.log('[inbound-email] Extracted -- from:', from, 'subject:', subject, 'text length:', text.length, 'html length:', html.length);
 
-    // Forward the email to Gmail
+    // Build the forwarded body
+    const bodyContent = html || text.replace(/\n/g, '<br>') || '(empty body)';
+    const forwardedHtml = `
+      <div style="font-family: sans-serif; color: #333;">
+        <div style="padding: 12px; background: #f5f5f5; border-left: 3px solid #6366f1; margin-bottom: 16px;">
+          <strong>From:</strong> ${escapeHtml(from)}<br>
+          <strong>To:</strong> ${escapeHtml(Array.isArray(to) ? to.join(', ') : String(to))}<br>
+          <strong>Subject:</strong> ${escapeHtml(subject)}
+        </div>
+        <div>${bodyContent}</div>
+      </div>
+    `;
+
+    const forwardedText = [
+      '--- Forwarded email ---',
+      `From: ${from}`,
+      `To: ${Array.isArray(to) ? to.join(', ') : to}`,
+      `Subject: ${subject}`,
+      '---',
+      '',
+      text || '(empty body)',
+    ].join('\n');
+
     console.log('[inbound-email] Forwarding to:', FORWARD_TO);
     const result = await resend.emails.send({
-      from: `ShieldScore <hello@shieldscore.io>`,
+      from: 'ShieldScore <hello@shieldscore.io>',
       to: FORWARD_TO,
-      subject: `[Fwd] ${email.subject || '(no subject)'}`,
-      html: buildForwardedHtml(email),
-      text: buildForwardedText(email),
-      replyTo: [email.from],
+      subject: subject ? `[Fwd] ${subject}` : '[Fwd] (no subject)',
+      html: forwardedHtml,
+      text: forwardedText,
+      replyTo: [from],
     });
-    console.log('[inbound-email] Forward sent successfully:', JSON.stringify(result));
+    console.log('[inbound-email] Sent:', JSON.stringify(result));
 
     return Response.json({ received: true });
   } catch (error) {
-    console.error('Inbound email forwarding failed:', error);
+    console.error('[inbound-email] Error:', error);
     return Response.json({ error: 'Internal error' }, { status: 500 });
   }
-}
-
-function buildForwardedHtml(email: ResendInboundEmail): string {
-  const originalHtml = email.html || email.text?.replace(/\n/g, '<br>') || '(empty)';
-  return `
-    <div style="font-family: sans-serif; color: #333;">
-      <p style="padding: 12px; background: #f5f5f5; border-left: 3px solid #6366f1; margin-bottom: 16px;">
-        <strong>From:</strong> ${escapeHtml(email.from)}<br>
-        <strong>To:</strong> ${escapeHtml(email.to?.join(', ') || 'hello@shieldscore.io')}<br>
-        <strong>Subject:</strong> ${escapeHtml(email.subject)}
-      </p>
-      <div>${originalHtml}</div>
-    </div>
-  `;
-}
-
-function buildForwardedText(email: ResendInboundEmail): string {
-  return [
-    `--- Forwarded email ---`,
-    `From: ${email.from}`,
-    `To: ${email.to?.join(', ') || 'hello@shieldscore.io'}`,
-    `Subject: ${email.subject}`,
-    `---`,
-    '',
-    email.text || '(empty)',
-  ].join('\n');
 }
 
 function escapeHtml(str: string): string {
