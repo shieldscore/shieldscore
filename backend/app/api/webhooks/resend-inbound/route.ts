@@ -31,8 +31,14 @@ export async function POST(request: Request): Promise<Response> {
 
     console.log('[inbound-email] Extracted -- from:', from, 'subject:', subject, 'text length:', text.length, 'html length:', html.length);
 
+    // DEBUG: dump all data keys and values into the email so we can see what Resend sends
+    const debugInfo = Object.entries(data).map(([key, val]) => {
+      const valStr = typeof val === 'string' ? val.slice(0, 200) : JSON.stringify(val)?.slice(0, 200);
+      return `<strong>${escapeHtml(key)}:</strong> <code>${escapeHtml(valStr || '(null)')}</code>`;
+    }).join('<br>');
+
     // Build the forwarded body
-    const bodyContent = html || text.replace(/\n/g, '<br>') || '(empty body)';
+    const bodyContent = html || text.replace(/\n/g, '<br>') || '(no body found)';
     const forwardedHtml = `
       <div style="font-family: sans-serif; color: #333;">
         <div style="padding: 12px; background: #f5f5f5; border-left: 3px solid #6366f1; margin-bottom: 16px;">
@@ -41,6 +47,11 @@ export async function POST(request: Request): Promise<Response> {
           <strong>Subject:</strong> ${escapeHtml(subject)}
         </div>
         <div>${bodyContent}</div>
+        <hr>
+        <div style="padding: 12px; background: #fff3cd; border: 1px solid #ffc107; margin-top: 16px; font-size: 12px;">
+          <strong>DEBUG - Raw Resend payload fields (remove after fixing):</strong><br><br>
+          ${debugInfo}
+        </div>
       </div>
     `;
 
