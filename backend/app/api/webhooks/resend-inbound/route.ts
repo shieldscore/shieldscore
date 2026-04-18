@@ -39,8 +39,8 @@ export async function POST(request: Request): Promise<Response> {
     }
 
     console.log('[inbound-email] Event type:', body.type);
-    console.log('[inbound-email] From:', body.data?.from);
-    console.log('[inbound-email] Subject:', body.data?.subject);
+    console.log('[inbound-email] Data keys:', body.data ? Object.keys(body.data) : 'no data');
+    console.log('[inbound-email] Full data:', JSON.stringify(body.data).slice(0, 1000));
 
     // Only process inbound email events
     if (body.type && body.type !== 'email.received') {
@@ -57,7 +57,7 @@ export async function POST(request: Request): Promise<Response> {
     // Forward the email to Gmail
     console.log('[inbound-email] Forwarding to:', FORWARD_TO);
     const result = await resend.emails.send({
-      from: `ShieldScore Inbox <alerts@shieldscore.io>`,
+      from: `ShieldScore <hello@shieldscore.io>`,
       to: FORWARD_TO,
       subject: `[Fwd] ${email.subject || '(no subject)'}`,
       html: buildForwardedHtml(email),
