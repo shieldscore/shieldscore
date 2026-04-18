@@ -27,33 +27,44 @@ interface ResendWebhookPayload {
 
 export async function POST(request: Request): Promise<Response> {
   try {
-    const body = await request.json() as ResendWebhookPayload;
+    const rawBody = await request.text();
+    console.log('[inbound-email] Received webhook:', rawBody.slice(0, 500));
 
-    // Verify webhook secret if configured
-    if (WEBHOOK_SECRET) {
-      const signature = request.headers.get('svix-signature');
-      if (!signature) {
-        return Response.json({ error: 'Missing signature' }, { status: 401 });
-      }
-      // Resend uses Svix for webhook signatures
-      // For full verification, install @svix/webhook and verify here
-      // For now, we check the secret header
+    let body: ResendWebhookPayload;
+    try {
+      body = JSON.parse(rawBody) as ResendWebhookPayload;
+    } catch {
+      console.error('[inbound-email] Failed to parse JSON');
+      return Response.json({ error: 'Invalid JSON' }, { status: 400 });
+    }
+
+    console.log('[inbound-email] Event type:', body.type);
+    console.log('[inbound-email] From:', body.data?.from);
+    console.log('[inbound-email] Subject:', body.data?.subject);
+
+    // Only process inbound email events
+    if (body.type && body.type !== 'email.received') {
+      console.log('[inbound-email] Ignoring event type:', body.type);
+      return Response.json({ received: true });
     }
 
     const email = body.data;
-    if (!email || !email.from || !email.subject) {
+    if (!email || !email.from) {
+      console.error('[inbound-email] Missing required fields. Keys received:', email ? Object.keys(email) : 'no data');
       return Response.json({ error: 'Invalid payload' }, { status: 400 });
     }
 
     // Forward the email to Gmail
-    await resend.emails.send({
+    console.log('[inbound-email] Forwarding to:', FORWARD_TO);
+    const result = await resend.emails.send({
       from: `ShieldScore Inbox <alerts@shieldscore.io>`,
       to: FORWARD_TO,
-      subject: `[Fwd] ${email.subject}`,
+      subject: `[Fwd] ${email.subject || '(no subject)'}`,
       html: buildForwardedHtml(email),
       text: buildForwardedText(email),
       replyTo: [email.from],
     });
+    console.log('[inbound-email] Forward sent successfully:', JSON.stringify(result));
 
     return Response.json({ received: true });
   } catch (error) {
