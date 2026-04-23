@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import {
   getHealthStatus,
@@ -11,6 +12,7 @@ import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
 import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/lib/rate-limit';
 import { getCorsHeaders, handlePreflight } from '@/lib/cors';
 import { normalizePlan, meetsMinimumPlan } from '@/lib/plan-gates';
+import { triggerInitialSync } from '@/lib/initial-sync';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,23 +27,142 @@ export async function OPTIONS(request: Request) {
 }
 
 /**
+ * Build a safe empty/default metrics shape. Used when a merchant has just been
+ * auto-onboarded (initializing) or has no daily_metrics yet. Shape matches what
+ * the dashboard expects so it renders without crashing on any plan tier.
+ */
+function emptyMetricsShape(plan: string, initializing: boolean): Record<string, unknown> {
+  const trend = { direction: 'flat' as const, delta: 0, periodDays: 7 };
+  return {
+    plan,
+    initializing,
+    healthScore: 100,
+    healthStatus: 'green',
+    disputeRatio: { current: 0, trend },
+    fraudRatio: { current: 0, trend },
+    declineRate: { current: 0, trend },
+    totalCharges: 0,
+    totalDisputes: 0,
+    totalFraudWarnings: 0,
+    activeRestrictions: 0,
+    projections: {
+      daysUntilCMM: null,
+      daysUntilVAMP: null,
+      daysUntilEnumeration: null,
+    },
+    benchmark: {
+      industryName: 'General retail',
+      averageDisputeRatio: 0,
+      merchantRatio: 0,
+      performance: 'average',
+    },
+    sparkline: [],
+    history: {
+      dates: [],
+      disputeRatios: [],
+      fraudRatios: [],
+      declineRates: [],
+      healthScores: [],
+    },
+    weeklyComparison: {
+      thisWeek: {
+        avgDisputeRatio: 0,
+        avgFraudRatio: 0,
+        avgDeclineRate: 0,
+        avgHealthScore: 100,
+        totalDisputes: 0,
+        totalCharges: 0,
+      },
+      lastWeek: {
+        avgDisputeRatio: 0,
+        avgFraudRatio: 0,
+        avgDeclineRate: 0,
+        avgHealthScore: 100,
+        totalDisputes: 0,
+        totalCharges: 0,
+      },
+      changes: {
+        disputeRatio: { delta: 0, direction: 'flat' },
+        fraudRatio: { delta: 0, direction: 'flat' },
+        declineRate: { delta: 0, direction: 'flat' },
+        healthScore: { delta: 0, direction: 'flat' },
+      },
+      summary: initializing
+        ? 'Loading initial data from Stripe. This takes about 30 seconds.'
+        : 'Not enough data for weekly comparison',
+      hasEnoughData: false,
+    },
+    lastUpdated: new Date().toISOString(),
+  };
+}
+
+/**
+ * Auto-create a merchant record for a Stripe account and kick off the initial sync.
+ * Handles the race where two requests arrive simultaneously for a new account.
+ * Returns the internal merchant UUID.
+ */
+async function autoOnboardMerchant(stripeAccountId: string): Promise<string | null> {
+  const { data: merchant, error: insertError } = await supabase
+    .from('merchants')
+    .insert({
+      stripe_account_id: stripeAccountId,
+      email: null,
+      plan: 'free',
+      alert_preferences: { email: true, slack: false, sms: false },
+    })
+    .select('id')
+    .single();
+
+  if (insertError) {
+    if (insertError.code === '23505') {
+      const { data: raceWinner } = await supabase
+        .from('merchants')
+        .select('id')
+        .eq('stripe_account_id', stripeAccountId)
+        .single();
+      return raceWinner?.id ?? null;
+    }
+    console.error(
+      `[metrics] Auto-onboard insert failed for ${stripeAccountId}:`,
+      insertError
+    );
+    return null;
+  }
+
+  after(async () => {
+    try {
+      await triggerInitialSync(stripeAccountId, merchant.id as string);
+    } catch (err) {
+      console.error(
+        `[metrics] Initial sync failed for ${stripeAccountId}:`,
+        err
+      );
+    }
+  });
+
+  return merchant.id as string;
+}
+
+/**
  * GET /api/metrics/[merchantId]
  *
  * Returns the latest health metrics for a merchant.
  * Accepts both Supabase UUID and Stripe account ID (acct_xxx).
- * Includes 7-day sparkline data for trend visualization.
+ *
+ * If the merchant does not exist yet and the ID is a valid Stripe account ID,
+ * the merchant is auto-created and an initial sync is kicked off. In that case
+ * the response returns 200 with default values and `initializing: true` so the
+ * dashboard can render a loading state rather than an error.
  */
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ merchantId: string }> }
 ) {
-  // Auth check
   const auth = verifyRequest(request);
   if (!auth.authenticated) {
     return unauthorizedResponse(auth.error!, getCorsHeaders(request));
   }
 
-  // Rate limit
   const ip = getClientIp(request);
   const rl = checkRateLimit(ip, '/api/metrics', RATE_LIMITS.metrics);
   if (!rl.allowed) {
@@ -70,6 +191,19 @@ export async function GET(
       .single();
 
     if (merchantError || !merchant) {
+      if (isStripeAccountId) {
+        const newMerchantId = await autoOnboardMerchant(merchantId);
+        if (!newMerchantId) {
+          return Response.json(
+            { error: 'Failed to initialize merchant' },
+            { status: 500, headers: getCorsHeaders(request) }
+          );
+        }
+        return Response.json(
+          emptyMetricsShape('free', true),
+          { headers: getCorsHeaders(request) }
+        );
+      }
       return Response.json(
         { error: 'Merchant not found' },
         { status: 404, headers: getCorsHeaders(request) }
@@ -81,7 +215,6 @@ export async function GET(
     const isPro = meetsMinimumPlan(plan, 'pro');
     const isDefend = meetsMinimumPlan(plan, 'defend');
 
-    // Get latest daily metrics
     const { data: latestMetrics } = await supabase
       .from('daily_metrics')
       .select('*')
@@ -90,14 +223,19 @@ export async function GET(
       .limit(1)
       .single();
 
-    // Get active restriction count
+    if (!latestMetrics) {
+      return Response.json(
+        emptyMetricsShape(plan, true),
+        { headers: getCorsHeaders(request) }
+      );
+    }
+
     const { count: activeRestrictions } = await supabase
       .from('restrictions')
       .select('id', { count: 'exact', head: true })
       .eq('merchant_id', internalId)
       .eq('resolved', false);
 
-    // Recalculate health score factoring in active restrictions
     let healthScore = latestMetrics?.health_score ?? 100;
     if ((activeRestrictions ?? 0) > 0) {
       const { calculateHealthScore } = await import('@/lib/calculations');
@@ -113,14 +251,22 @@ export async function GET(
     const currentFraudRatio = Number(latestMetrics?.fraud_ratio ?? 0);
     const currentDeclineRate = Number(latestMetrics?.decline_rate ?? 0);
 
-    // Base response: available to all plans (free, pro, defend)
     const response: Record<string, unknown> = {
-      plan,
+      ...emptyMetricsShape(plan, false),
       healthScore,
       healthStatus: getHealthStatus(healthScore),
-      disputeRatio: { current: currentDisputeRatio },
-      fraudRatio: { current: currentFraudRatio },
-      declineRate: { current: currentDeclineRate },
+      disputeRatio: {
+        current: currentDisputeRatio,
+        trend: { direction: 'flat', delta: 0, periodDays: 7 },
+      },
+      fraudRatio: {
+        current: currentFraudRatio,
+        trend: { direction: 'flat', delta: 0, periodDays: 7 },
+      },
+      declineRate: {
+        current: currentDeclineRate,
+        trend: { direction: 'flat', delta: 0, periodDays: 7 },
+      },
       totalCharges: latestMetrics?.total_charges ?? 0,
       totalDisputes: latestMetrics?.total_disputes ?? 0,
       totalFraudWarnings: latestMetrics?.total_fraud_warnings ?? 0,
@@ -128,7 +274,6 @@ export async function GET(
       lastUpdated: latestMetrics?.created_at ?? new Date().toISOString(),
     };
 
-    // Pro+ features: trends, projections, sparkline, history, benchmarks, countdown
     if (isPro) {
       const [disputeTrend, fraudTrend, declineTrend] = await Promise.all([
         calculateTrend(internalId, 'dispute_ratio'),
@@ -136,23 +281,20 @@ export async function GET(
         calculateTrend(internalId, 'decline_rate'),
       ]);
 
-      // Add trend data to ratio objects
       response.disputeRatio = { current: currentDisputeRatio, trend: disputeTrend };
       response.fraudRatio = { current: currentFraudRatio, trend: fraudTrend };
       response.declineRate = { current: currentDeclineRate, trend: declineTrend };
 
-      const projections = calculateProjections(
+      response.projections = calculateProjections(
         currentDisputeRatio,
         disputeTrend,
         currentDeclineRate,
         declineTrend
       );
-      response.projections = projections;
 
       const mccCode: string = (merchant.mcc_code as string) ?? '5999';
       response.benchmark = getBenchmarkComparison(mccCode, currentDisputeRatio);
 
-      // 7-day sparkline for trend tracking
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
         .toISOString()
         .split('T')[0];
@@ -172,7 +314,6 @@ export async function GET(
         healthScore: Number(row.health_score),
       }));
 
-      // Pro gets up to 30 days of history. Defend gets up to 90.
       const maxHistoryDays = isDefend ? 90 : 30;
       const clampedDays = Math.min(historyDays, maxHistoryDays);
       const historyStart = new Date(Date.now() - clampedDays * 24 * 60 * 60 * 1000)
@@ -196,7 +337,6 @@ export async function GET(
       };
     }
 
-    // Defend-only features: weekly comparison, remediation, velocity
     if (isDefend) {
       response.weeklyComparison = await getWeeklyComparison(internalId);
 

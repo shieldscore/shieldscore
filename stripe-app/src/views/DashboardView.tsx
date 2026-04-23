@@ -17,9 +17,7 @@ import {
   Select,
 } from '@stripe/ui-extension-sdk/ui';
 import type { ExtensionContextValue } from '@stripe/ui-extension-sdk/context';
-import { getDashboardUserEmail } from '@stripe/ui-extension-sdk/utils';
-import { fetchStripeSignature } from '@stripe/ui-extension-sdk/utils';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import BrandIcon from './brand_icon.svg';
 
 interface TrendData {
@@ -142,6 +140,7 @@ interface MetricsResponse {
   weeklyComparison: WeeklyComparisonData;
   remediation?: RemediationSummary;
   lastUpdated: string;
+  initializing?: boolean;
 }
 
 const EVIDENCE_LABELS: Record<string, string> = {
@@ -209,6 +208,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [historyDays, setHistoryDays] = useState<'30' | '90'>('30');
   const [remediationPlan, setRemediationPlan] = useState<RemediationPlan | null>(null);
   const [showRemediation, setShowRemediation] = useState(false);
+  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getAccountId = useCallback(() => {
     return environment?.objectContext?.id || userContext?.account?.id;
@@ -223,48 +223,10 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
         return;
       }
 
-      // Try to fetch metrics
-      let response = await fetch(`${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`, {
-        headers: authHeaders(),
-      });
-
-      // If merchant not found, onboard them first
-      if (response.status === 404) {
-        // Get email for the merchant record (best-effort)
-        let email: string | null = null;
-        try {
-          const emailResult = await getDashboardUserEmail();
-          email = emailResult.email;
-        } catch {
-          // Email not available — that's fine, it's optional
-        }
-
-        // Get Stripe signature for backend verification
-        let signature: string | undefined;
-        try {
-          signature = await fetchStripeSignature();
-        } catch {
-          // Signature not available in dev mode — skip
-        }
-
-        const onboardResponse = await fetch(`${BACKEND_URL}/onboard`, {
-          method: 'POST',
-          headers: authHeaders(signature ? { 'Stripe-Signature': signature } : undefined),
-          body: JSON.stringify({ stripeAccountId: accountId, email }),
-        });
-
-        if (!onboardResponse.ok) {
-          throw new Error('Failed to set up your account');
-        }
-
-        // Give the initial sync a moment to complete
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-
-        // Retry fetching metrics
-        response = await fetch(`${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`, {
-          headers: authHeaders(),
-        });
-      }
+      const response = await fetch(
+        `${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`,
+        { headers: authHeaders() }
+      );
 
       if (!response.ok) throw new Error('Failed to fetch metrics');
 
@@ -273,29 +235,30 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       setLastChecked(new Date());
       setError(null);
 
-      // Fetch recent disputes and velocity in parallel
-      const [disputeRes, velocityRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5`, {
-          headers: authHeaders(),
-        }).catch(() => null),
-        fetch(`${BACKEND_URL}/velocity/${accountId}`, {
-          headers: authHeaders(),
-        }).catch(() => null),
-      ]);
+      // Skip secondary fetches while the merchant is still being initialized —
+      // they'd just return empty/404 and add noise.
+      if (!data.initializing) {
+        const [disputeRes, velocityRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5`, {
+            headers: authHeaders(),
+          }).catch(() => null),
+          fetch(`${BACKEND_URL}/velocity/${accountId}`, {
+            headers: authHeaders(),
+          }).catch(() => null),
+        ]);
 
-      if (disputeRes?.ok) {
-        const disputeData = await disputeRes.json();
-        setDisputes(disputeData.disputes || []);
-      }
+        if (disputeRes?.ok) {
+          const disputeData = await disputeRes.json();
+          setDisputes(disputeData.disputes || []);
+        }
 
-      if (velocityRes?.ok) {
-        const velocityData: VelocityReport = await velocityRes.json();
-        setVelocity(velocityData);
+        if (velocityRes?.ok) {
+          const velocityData: VelocityReport = await velocityRes.json();
+          setVelocity(velocityData);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      // Keep existing metrics on error — show stale data with warning
-      // Only set error message, don't clear metrics
       setError(`Unable to load health data: ${msg}`);
     } finally {
       setLoading(false);
@@ -305,6 +268,22 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   useEffect(() => {
     fetchMetrics();
   }, [fetchMetrics]);
+
+  // Poll while the backend reports initializing. Initial sync usually takes
+  // 10–30s; we refetch every 5s until data lands, then stop.
+  useEffect(() => {
+    if (metrics?.initializing) {
+      pollTimerRef.current = setTimeout(() => {
+        fetchMetrics();
+      }, 5000);
+    }
+    return () => {
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, [metrics?.initializing, fetchMetrics]);
 
   const fetchRemediationPlan = useCallback(async () => {
     const accountId = getAccountId();
@@ -368,13 +347,31 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const hasSparkline = metrics?.sparkline && metrics.sparkline.length > 1;
 
   // ── Loading ──────────────────────────────────
-  if (loading) {
+  if (loading && !metrics) {
     return (
       <ContextView title="ShieldScore" brandIcon={BrandIcon}>
         <Box css={{ padding: 'xlarge', stack: 'y', alignX: 'center', gap: 'medium' }}>
           <Spinner size="large" />
           <Inline css={{ font: 'body', color: 'secondary' }}>
             Loading health data...
+          </Inline>
+        </Box>
+      </ContextView>
+    );
+  }
+
+  // ── Initializing (first install) ─────────────
+  if (metrics?.initializing) {
+    return (
+      <ContextView title="ShieldScore" brandIcon={BrandIcon}>
+        <Box css={{ padding: 'xlarge', stack: 'y', alignX: 'center', gap: 'medium' }}>
+          <Spinner size="large" />
+          <Inline css={{ font: 'heading', fontWeight: 'bold' }}>
+            Loading initial data...
+          </Inline>
+          <Inline css={{ font: 'body', color: 'secondary' }}>
+            Pulling 30 days of disputes, charges, and fraud warnings from Stripe.
+            This usually takes under a minute.
           </Inline>
         </Box>
       </ContextView>
