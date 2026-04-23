@@ -200,6 +200,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<'network' | 'api' | null>(null);
   const [lastChecked, setLastChecked] = useState<Date>(new Date());
   const [disputes, setDisputes] = useState<DisputeItem[]>([]);
   const [expandedDispute, setExpandedDispute] = useState<string | null>(null);
@@ -219,21 +220,34 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       setLoading(true);
       const accountId = getAccountId();
       if (!accountId) {
+        setErrorKind('api');
         setError('Could not determine Stripe account ID');
         return;
       }
 
-      const response = await fetch(
-        `${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`,
-        { headers: authHeaders() }
-      );
+      let response: Response;
+      try {
+        response = await fetch(
+          `${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`,
+          { headers: authHeaders() }
+        );
+      } catch (netErr) {
+        setErrorKind('network');
+        setError(netErr instanceof Error ? netErr.message : String(netErr));
+        return;
+      }
 
-      if (!response.ok) throw new Error('Failed to fetch metrics');
+      if (!response.ok) {
+        setErrorKind('api');
+        setError(`Backend returned ${response.status}`);
+        return;
+      }
 
       const data: MetricsResponse = await response.json();
       setMetrics(data);
       setLastChecked(new Date());
       setError(null);
+      setErrorKind(null);
 
       // Skip secondary fetches while the merchant is still being initialized —
       // they'd just return empty/404 and add noise.
@@ -259,7 +273,8 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      setError(`Unable to load health data: ${msg}`);
+      setErrorKind('network');
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -380,13 +395,18 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
 
   // ── Error with no prior data ──────────────────
   if (!metrics && (error || !loading)) {
+    const isNetwork = errorKind === 'network';
     return (
       <ContextView title="ShieldScore" brandIcon={BrandIcon}>
         <Box css={{ padding: 'medium', stack: 'y', gap: 'medium' }}>
           <Banner
-            type="critical"
-            title="Connection error"
-            description={error || 'Failed to load data'}
+            type={isNetwork ? 'critical' : 'caution'}
+            title={isNetwork ? 'Connection error' : 'Setting up your account...'}
+            description={
+              isNetwork
+                ? error || 'Failed to reach the ShieldScore backend.'
+                : 'We are getting your account ready. This usually takes under a minute.'
+            }
           />
           <Button type="primary" onPress={fetchMetrics}>
             Retry
@@ -443,8 +463,12 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
         <Box css={{ padding: 'small' }}>
           <Banner
             type="caution"
-            title="Data may be stale"
-            description="Unable to refresh. Showing last known data."
+            title={errorKind === 'network' ? 'Connection error' : 'Data may be stale'}
+            description={
+              errorKind === 'network'
+                ? 'Could not reach ShieldScore. Showing last known data.'
+                : 'Could not refresh. Showing last known data.'
+            }
             actions={
               <Button onPress={fetchMetrics} type="secondary" size="small">
                 Retry
