@@ -549,15 +549,13 @@ function resolvePlanFromSubscription(subscription: Stripe.Subscription): 'free' 
 
   const priceId = items[0].price?.id ?? '';
 
-  // TODO: Replace these placeholder price IDs with actual marketplace price IDs
-  // once the app is published and plans are configured in Stripe.
   const PRICE_TO_PLAN: Record<string, 'pro' | 'defend'> = {
-    // Monthly
-    [process.env.STRIPE_PRICE_PRO_MONTHLY ?? 'price_pro_monthly']: 'pro',
-    [process.env.STRIPE_PRICE_DEFEND_MONTHLY ?? 'price_defend_monthly']: 'defend',
-    // Annual
-    [process.env.STRIPE_PRICE_PRO_ANNUAL ?? 'price_pro_annual']: 'pro',
-    [process.env.STRIPE_PRICE_DEFEND_ANNUAL ?? 'price_defend_annual']: 'defend',
+    ...(process.env.STRIPE_MONITOR_PRICE_ID
+      ? { [process.env.STRIPE_MONITOR_PRICE_ID]: 'pro' }
+      : {}),
+    ...(process.env.STRIPE_DEFEND_PRICE_ID
+      ? { [process.env.STRIPE_DEFEND_PRICE_ID]: 'defend' }
+      : {}),
   };
 
   return PRICE_TO_PLAN[priceId] ?? 'free';
