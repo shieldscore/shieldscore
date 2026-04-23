@@ -4,9 +4,6 @@
   "name": "ShieldScore",
   "version": "1.3.4",
   "icon": "./icon.png",
-  "app_backend": {
-    "url": "https://shieldscore.io/api"
-  },
   "ui_extension": {
     "views": [
       {
@@ -20,9 +17,7 @@
     ],
     "content_security_policy": {
       "connect-src": [
-        "https://shieldscore.io",
-        "https://shieldscore.io/api/",
-        "https://*.stripe.com"
+        "https://shieldscore.io/api/"
       ],
       "purpose": "Connects to ShieldScore backend API for health metrics, alerts, velocity, and settings"
     }
