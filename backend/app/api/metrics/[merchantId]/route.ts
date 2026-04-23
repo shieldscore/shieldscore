@@ -99,28 +99,37 @@ function emptyMetricsShape(plan: string, initializing: boolean): Record<string, 
 /**
  * Auto-create a merchant record for a Stripe account and kick off the initial sync.
  * Handles the race where two requests arrive simultaneously for a new account.
- * Returns the internal merchant UUID.
+ * Returns { internalId, plan } on success, or null on failure.
+ *
+ * Does not specify `plan` in the insert — the DB column default applies, which
+ * keeps us compatible across schema migrations (pre-006 default is 'monitor',
+ * post-006 default is 'free').
  */
-async function autoOnboardMerchant(stripeAccountId: string): Promise<string | null> {
+async function autoOnboardMerchant(
+  stripeAccountId: string
+): Promise<{ internalId: string; plan: string } | null> {
   const { data: merchant, error: insertError } = await supabase
     .from('merchants')
     .insert({
       stripe_account_id: stripeAccountId,
       email: null,
-      plan: 'free',
       alert_preferences: { email: true, slack: false, sms: false },
     })
-    .select('id')
+    .select('id, plan')
     .single();
 
   if (insertError) {
     if (insertError.code === '23505') {
       const { data: raceWinner } = await supabase
         .from('merchants')
-        .select('id')
+        .select('id, plan')
         .eq('stripe_account_id', stripeAccountId)
         .single();
-      return raceWinner?.id ?? null;
+      if (!raceWinner) return null;
+      return {
+        internalId: raceWinner.id as string,
+        plan: (raceWinner.plan as string) ?? 'free',
+      };
     }
     console.error(
       `[metrics] Auto-onboard insert failed for ${stripeAccountId}:`,
@@ -140,7 +149,10 @@ async function autoOnboardMerchant(stripeAccountId: string): Promise<string | nu
     }
   });
 
-  return merchant.id as string;
+  return {
+    internalId: merchant.id as string,
+    plan: (merchant.plan as string) ?? 'free',
+  };
 }
 
 /**
@@ -192,15 +204,15 @@ export async function GET(
 
     if (merchantError || !merchant) {
       if (isStripeAccountId) {
-        const newMerchantId = await autoOnboardMerchant(merchantId);
-        if (!newMerchantId) {
+        const created = await autoOnboardMerchant(merchantId);
+        if (!created) {
           return Response.json(
-            { error: 'Failed to initialize merchant' },
-            { status: 500, headers: getCorsHeaders(request) }
+            emptyMetricsShape('free', true),
+            { headers: getCorsHeaders(request) }
           );
         }
         return Response.json(
-          emptyMetricsShape('free', true),
+          emptyMetricsShape(normalizePlan(created.plan), true),
           { headers: getCorsHeaders(request) }
         );
       }
