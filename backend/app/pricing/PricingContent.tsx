@@ -336,7 +336,7 @@ export default function PricingContent() {
               &nbsp;
             </p>
             <a
-              href="https://marketplace.stripe.com"
+              href="https://marketplace.stripe.com/apps/shieldscore"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-hover mb-7 flex w-full items-center justify-center rounded-[8px] border-[1.5px] border-[#e5e5e5] bg-[#f3f4f6] py-3.5 text-[15px] font-semibold text-[#111] no-underline transition-colors hover:bg-[#e5e7eb]"
@@ -373,7 +373,7 @@ export default function PricingContent() {
               Less than the cost of two Stripe dispute fees.
             </p>
             <a
-              href="https://marketplace.stripe.com"
+              href="https://marketplace.stripe.com/apps/shieldscore"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-hover mb-7 flex w-full items-center justify-center rounded-[8px] bg-[#16a34a] py-3.5 text-[15px] font-semibold text-white no-underline transition-colors hover:bg-[#15803d]"
@@ -412,7 +412,7 @@ export default function PricingContent() {
               For merchants processing $50K+/month.
             </p>
             <a
-              href="https://marketplace.stripe.com"
+              href="https://marketplace.stripe.com/apps/shieldscore"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-hover mb-7 flex w-full items-center justify-center rounded-[8px] bg-[#111] py-3.5 text-[15px] font-semibold text-white no-underline transition-colors hover:bg-[#333]"
@@ -463,7 +463,7 @@ export default function PricingContent() {
             Start monitoring your account health. Takes 60 seconds.
           </p>
           <a
-            href="https://marketplace.stripe.com"
+            href="https://marketplace.stripe.com/apps/shieldscore"
             target="_blank"
             rel="noopener noreferrer"
             className="btn-hover mt-8 inline-flex items-center rounded-[8px] bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"

@@ -58,7 +58,7 @@ export default function Home() {
               <div className="hero-stagger-3">
                 <div className="mt-8">
                   <a
-                    href="https://marketplace.stripe.com"
+                    href="https://marketplace.stripe.com/apps/shieldscore"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-hover inline-flex items-center rounded-lg bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"
@@ -583,7 +583,7 @@ export default function Home() {
               Start monitoring your Stripe account health. Takes 60 seconds.
             </p>
             <a
-              href="https://marketplace.stripe.com"
+              href="https://marketplace.stripe.com/apps/shieldscore"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-hover mt-8 inline-flex items-center rounded-lg bg-[#111] px-8 py-3.5 text-[16px] font-semibold text-white no-underline"

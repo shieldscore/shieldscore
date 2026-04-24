@@ -60,7 +60,7 @@ export default function Nav() {
           <div className="flex items-center gap-3">
             {/* Desktop CTA */}
             <a
-              href="https://marketplace.stripe.com"
+              href="https://marketplace.stripe.com/apps/shieldscore"
               target="_blank"
               rel="noopener noreferrer"
               className="btn-hover hidden items-center rounded-lg bg-[#111] px-5 py-2.5 text-[14px] font-semibold text-white no-underline md:inline-flex"
@@ -173,7 +173,7 @@ export default function Nav() {
               }}
             >
               <a
-                href="https://marketplace.stripe.com"
+                href="https://marketplace.stripe.com/apps/shieldscore"
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={close}

@@ -437,7 +437,7 @@ export default function WinStripeDisputeGuide() {
               each dispute&apos;s reason code, estimated win rate, and the
               specific evidence fields to fill in Stripe. Free on the{" "}
               <a
-                href="https://marketplace.stripe.com"
+                href="https://marketplace.stripe.com/apps/shieldscore"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#22c55e] underline hover:text-[#16a34a]"

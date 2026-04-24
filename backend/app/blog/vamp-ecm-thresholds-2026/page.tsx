@@ -410,7 +410,7 @@ export default function VAMPECMThresholds2026() {
             <p>
               <strong>
                 <a
-                  href="https://marketplace.stripe.com"
+                  href="https://marketplace.stripe.com/apps/shieldscore"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-[#22c55e] underline hover:text-[#16a34a]"
@@ -496,7 +496,7 @@ export default function VAMPECMThresholds2026() {
               Stripe App that monitors your dispute ratios against these
               thresholds in real time.{" "}
               <a
-                href="https://marketplace.stripe.com"
+                href="https://marketplace.stripe.com/apps/shieldscore"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#22c55e] underline hover:text-[#16a34a]"

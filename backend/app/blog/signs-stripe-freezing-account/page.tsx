@@ -210,7 +210,7 @@ export default function SignsStripeFreezing() {
               fraud ratios in real time, tracks them against card network
               thresholds, and alerts you when your account health changes.{" "}
               <a
-                href="https://marketplace.stripe.com"
+                href="https://marketplace.stripe.com/apps/shieldscore"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#22c55e] underline hover:text-[#16a34a]"

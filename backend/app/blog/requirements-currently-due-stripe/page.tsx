@@ -272,7 +272,7 @@ export default function RequirementsCurrentlyDue() {
               real time, alerting you within minutes when Stripe flags your
               account.{" "}
               <a
-                href="https://marketplace.stripe.com"
+                href="https://marketplace.stripe.com/apps/shieldscore"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-medium text-[#22c55e] underline hover:text-[#16a34a]"
