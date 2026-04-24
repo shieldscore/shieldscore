@@ -31,8 +31,9 @@ const DetailView = ({ userContext, environment }: ExtensionContextValue) => {
     try {
       const accountId = environment?.objectContext?.id || userContext?.account?.id;
       if (!accountId) return;
+      const mode: 'test' | 'live' = environment?.mode === 'test' ? 'test' : 'live';
 
-      const response = await fetch(`${BACKEND_URL}/alerts/${accountId}?limit=10`, {
+      const response = await fetch(`${BACKEND_URL}/alerts/${accountId}?limit=10&mode=${mode}`, {
         headers: authHeaders(),
       });
       if (!response.ok) throw new Error('Failed to fetch alerts');

@@ -215,7 +215,11 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
     return environment?.objectContext?.id || userContext?.account?.id;
   }, [environment, userContext]);
 
-  const fetchMetrics = useCallback(async () => {
+  const getMode = useCallback((): 'test' | 'live' => {
+    return environment?.mode === 'test' ? 'test' : 'live';
+  }, [environment]);
+
+  const fetchMetrics = useCallback(async (opts?: { refresh?: boolean }) => {
     try {
       setLoading(true);
       const accountId = getAccountId();
@@ -225,10 +229,12 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
         return;
       }
 
+      const mode = getMode();
+      const refreshParam = opts?.refresh ? '&refresh=1' : '';
       let response: Response;
       try {
         response = await fetch(
-          `${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}`,
+          `${BACKEND_URL}/metrics/${accountId}?historyDays=${historyDays}&mode=${mode}${refreshParam}`,
           { headers: authHeaders() }
         );
       } catch (netErr) {
@@ -253,10 +259,10 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
       // they'd just return empty/404 and add noise.
       if (!data.initializing) {
         const [disputeRes, velocityRes] = await Promise.all([
-          fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5`, {
+          fetch(`${BACKEND_URL}/disputes/${accountId}?limit=5&mode=${mode}`, {
             headers: authHeaders(),
           }).catch(() => null),
-          fetch(`${BACKEND_URL}/velocity/${accountId}`, {
+          fetch(`${BACKEND_URL}/velocity/${accountId}?mode=${mode}`, {
             headers: authHeaders(),
           }).catch(() => null),
         ]);
@@ -278,7 +284,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
     } finally {
       setLoading(false);
     }
-  }, [getAccountId, historyDays]);
+  }, [getAccountId, getMode, historyDays]);
 
   useEffect(() => {
     fetchMetrics();
@@ -303,8 +309,9 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
   const fetchRemediationPlan = useCallback(async () => {
     const accountId = getAccountId();
     if (!accountId) return;
+    const mode = getMode();
     try {
-      const res = await fetch(`${BACKEND_URL}/remediation/${accountId}`, {
+      const res = await fetch(`${BACKEND_URL}/remediation/${accountId}?mode=${mode}`, {
         headers: authHeaders(),
       });
       if (res.ok) {
@@ -315,7 +322,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
     } catch {
       // Non-critical
     }
-  }, [getAccountId]);
+  }, [getAccountId, getMode]);
 
   const fmt = (ratio: number): string => `${(ratio * 100).toFixed(2)}%`;
 
@@ -408,7 +415,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
                 : 'We are getting your account ready. This usually takes under a minute.'
             }
           />
-          <Button type="primary" onPress={fetchMetrics}>
+          <Button type="primary" onPress={() => fetchMetrics({ refresh: true })}>
             Retry
           </Button>
         </Box>
@@ -470,7 +477,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
                 : 'Could not refresh. Showing last known data.'
             }
             actions={
-              <Button onPress={fetchMetrics} type="secondary" size="small">
+              <Button onPress={() => fetchMetrics({ refresh: true })} type="secondary" size="small">
                 Retry
               </Button>
             }
@@ -495,7 +502,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
               {lastChecked.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </Inline>
             <Box css={{ alignX: 'end' }}>
-              <Button type="secondary" size="small" onPress={fetchMetrics}>
+              <Button type="secondary" size="small" onPress={() => fetchMetrics({ refresh: true })}>
                 <Icon name="refresh" size="xsmall" />
                 Refresh
               </Button>
@@ -567,7 +574,7 @@ const DashboardView = ({ userContext, environment }: ExtensionContextValue) => {
 
             <Box css={{ marginTop: 'small', alignX: 'end' }}>
               <Link
-                href={`${BACKEND_URL}/export/${getAccountId()}?days=${historyDays}&token=${API_SECRET_KEY}`}
+                href={`${BACKEND_URL}/export/${getAccountId()}?days=${historyDays}&mode=${getMode()}&token=${API_SECRET_KEY}`}
                 target="_blank"
                 external
                 type="secondary"

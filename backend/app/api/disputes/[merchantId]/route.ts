@@ -1,4 +1,4 @@
-import { stripe } from '@/lib/stripe';
+import { getStripeClient } from '@/lib/stripe';
 import { supabase } from '@/lib/supabase';
 import { getDisputeGuidance } from '@/lib/dispute-guidance';
 import { verifyRequest, unauthorizedResponse } from '@/lib/api-auth';
@@ -65,6 +65,10 @@ export async function GET(
       { status: 400, headers: getCorsHeaders(request) }
     );
   }
+
+  const url = new URL(request.url);
+  const modeParam = url.searchParams.get('mode');
+  const mode: 'test' | 'live' = modeParam === 'test' ? 'test' : 'live';
 
   try {
   // Look up merchant (accepts both Supabase UUID and Stripe account ID)
@@ -139,7 +143,8 @@ export async function GET(
     // No stored events — fetch directly from Stripe API
     try {
       const stripeDisputes: Stripe.Dispute[] = [];
-      for await (const dispute of stripe.disputes.list(
+      const client = getStripeClient(mode);
+      for await (const dispute of client.disputes.list(
         { limit: 20, expand: ['data.charge'] },
         { stripeAccount: merchant.stripe_account_id }
       )) {

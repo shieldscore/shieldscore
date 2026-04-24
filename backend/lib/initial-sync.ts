@@ -1,16 +1,19 @@
 import { supabase } from '@/lib/supabase';
-import { stripe } from '@/lib/stripe';
+import { getStripeClient, type StripeMode } from '@/lib/stripe';
 import { calculateAllMetrics } from '@/lib/calculations';
 
 /**
  * Pull 30 days of historical data from Stripe and save the initial daily_metrics snapshot.
  * Safe to call for any merchant on any Stripe account — gracefully handles accounts
- * without Radar access.
+ * without Radar access. Scoped to test or live via the mode argument so that
+ * installs in different modes don't overwrite each other's snapshot.
  */
 export async function triggerInitialSync(
   stripeAccountId: string,
-  merchantId: string
+  merchantId: string,
+  mode: StripeMode = 'live'
 ): Promise<void> {
+  const stripe = getStripeClient(mode);
   const now = new Date();
   const thirtyDaysAgo = Math.floor(
     (now.getTime() - 30 * 24 * 60 * 60 * 1000) / 1000
@@ -83,6 +86,7 @@ export async function triggerInitialSync(
       {
         merchant_id: merchantId,
         date: today,
+        mode,
         total_charges: totalCharges,
         total_disputes: totalDisputes,
         total_fraud_warnings: totalFraudWarnings,
@@ -93,7 +97,7 @@ export async function triggerInitialSync(
         decline_rate: metrics.declineRate,
         health_score: metrics.healthScore,
       },
-      { onConflict: 'merchant_id,date' }
+      { onConflict: 'merchant_id,date,mode' }
     );
 
   if (upsertError) {

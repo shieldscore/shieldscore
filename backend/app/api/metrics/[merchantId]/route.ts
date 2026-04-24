@@ -13,6 +13,7 @@ import { checkRateLimit, rateLimitResponse, getClientIp, RATE_LIMITS } from '@/l
 import { getCorsHeaders, handlePreflight } from '@/lib/cors';
 import { normalizePlan, meetsMinimumPlan } from '@/lib/plan-gates';
 import { triggerInitialSync } from '@/lib/initial-sync';
+import { syncMerchantMetrics } from '@/lib/sync-merchant';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,7 +107,8 @@ function emptyMetricsShape(plan: string, initializing: boolean): Record<string, 
  * post-006 default is 'free').
  */
 async function autoOnboardMerchant(
-  stripeAccountId: string
+  stripeAccountId: string,
+  mode: 'test' | 'live'
 ): Promise<{ internalId: string; plan: string } | null> {
   const { data: merchant, error: insertError } = await supabase
     .from('merchants')
@@ -126,6 +128,18 @@ async function autoOnboardMerchant(
         .eq('stripe_account_id', stripeAccountId)
         .single();
       if (!raceWinner) return null;
+      // Still kick off a sync for the requested mode in case this is the
+      // merchant's first visit under that mode.
+      after(async () => {
+        try {
+          await triggerInitialSync(stripeAccountId, raceWinner.id as string, mode);
+        } catch (err) {
+          console.error(
+            `[metrics] Race-winner initial sync failed for ${stripeAccountId} (mode=${mode}):`,
+            err
+          );
+        }
+      });
       return {
         internalId: raceWinner.id as string,
         plan: (raceWinner.plan as string) ?? 'free',
@@ -140,10 +154,10 @@ async function autoOnboardMerchant(
 
   after(async () => {
     try {
-      await triggerInitialSync(stripeAccountId, merchant.id as string);
+      await triggerInitialSync(stripeAccountId, merchant.id as string, mode);
     } catch (err) {
       console.error(
-        `[metrics] Initial sync failed for ${stripeAccountId}:`,
+        `[metrics] Initial sync failed for ${stripeAccountId} (mode=${mode}):`,
         err
       );
     }
@@ -194,6 +208,9 @@ export async function GET(
     const url = new URL(request.url);
     const historyDaysParam = url.searchParams.get('historyDays');
     const historyDays = Math.min(Math.max(parseInt(historyDaysParam ?? '30', 10) || 30, 1), 90);
+    const forceRefresh = url.searchParams.get('refresh') === '1';
+    const modeParam = url.searchParams.get('mode');
+    const mode: 'test' | 'live' = modeParam === 'test' ? 'test' : 'live';
 
     const isStripeAccountId = merchantId.startsWith('acct_');
     const { data: merchant, error: merchantError } = await supabase
@@ -204,7 +221,7 @@ export async function GET(
 
     if (merchantError || !merchant) {
       if (isStripeAccountId) {
-        const created = await autoOnboardMerchant(merchantId);
+        const created = await autoOnboardMerchant(merchantId, mode);
         if (!created) {
           return Response.json(
             emptyMetricsShape('free', true),
@@ -227,15 +244,56 @@ export async function GET(
     const isPro = meetsMinimumPlan(plan, 'pro');
     const isDefend = meetsMinimumPlan(plan, 'defend');
 
+    // Live re-sync from Stripe when the dashboard's Refresh button asks for it.
+    // Best-effort: on failure we fall through and serve the last cached snapshot.
+    if (forceRefresh) {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const thirtyDaysAgo = Math.floor(
+          (Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000
+        );
+        await syncMerchantMetrics(
+          internalId,
+          merchant.stripe_account_id as string,
+          thirtyDaysAgo,
+          today,
+          mode
+        );
+      } catch (err) {
+        console.error(
+          `[metrics] refresh=1 sync failed for ${merchant.stripe_account_id} (mode=${mode}):`,
+          err instanceof Error ? err.message : err
+        );
+      }
+    }
+
     const { data: latestMetrics } = await supabase
       .from('daily_metrics')
       .select('*')
       .eq('merchant_id', internalId)
+      .eq('mode', mode)
       .order('date', { ascending: false })
       .limit(1)
       .single();
 
     if (!latestMetrics) {
+      // Merchant exists but has no snapshot for this mode yet (first visit in
+      // this mode, row was manually deleted, or initial sync is still running).
+      // Kick off a fresh mode-scoped sync so subsequent polls see real data.
+      after(async () => {
+        try {
+          await triggerInitialSync(
+            merchant.stripe_account_id as string,
+            internalId,
+            mode
+          );
+        } catch (err) {
+          console.error(
+            `[metrics] Background initial sync failed for ${merchant.stripe_account_id} (mode=${mode}):`,
+            err instanceof Error ? err.message : err
+          );
+        }
+      });
       return Response.json(
         emptyMetricsShape(plan, true),
         { headers: getCorsHeaders(request) }
@@ -315,6 +373,7 @@ export async function GET(
         .from('daily_metrics')
         .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
         .eq('merchant_id', internalId)
+        .eq('mode', mode)
         .gte('date', sevenDaysAgo)
         .order('date', { ascending: true });
 
@@ -336,6 +395,7 @@ export async function GET(
         .from('daily_metrics')
         .select('date, dispute_ratio, fraud_ratio, decline_rate, health_score')
         .eq('merchant_id', internalId)
+        .eq('mode', mode)
         .gte('date', historyStart)
         .order('date', { ascending: true });
 

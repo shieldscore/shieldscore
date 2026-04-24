@@ -37,6 +37,10 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
     return environment?.objectContext?.id || userContext?.account?.id;
   }, [environment, userContext]);
 
+  const getMode = useCallback((): 'test' | 'live' => {
+    return environment?.mode === 'test' ? 'test' : 'live';
+  }, [environment]);
+
   // Load current settings
   useEffect(() => {
     const fetchSettings = async () => {
@@ -44,7 +48,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
         const accountId = getAccountId();
         if (!accountId) return;
 
-        const response = await fetch(`${BACKEND_URL}/settings/${accountId}`, {
+        const response = await fetch(`${BACKEND_URL}/settings/${accountId}?mode=${getMode()}`, {
           headers: authHeaders(),
         });
         if (!response.ok) throw new Error('Failed to fetch settings');
@@ -61,7 +65,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
     };
 
     fetchSettings();
-  }, [getAccountId]);
+  }, [getAccountId, getMode]);
 
   const handleSave = async () => {
     const accountId = getAccountId();
@@ -77,7 +81,7 @@ const SettingsView = ({ userContext, environment }: ExtensionContextValue) => {
     setMessage(null);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/settings/${accountId}`, {
+      const response = await fetch(`${BACKEND_URL}/settings/${accountId}?mode=${getMode()}`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
