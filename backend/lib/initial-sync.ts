@@ -16,12 +16,17 @@ export async function triggerInitialSync(
     (now.getTime() - 30 * 24 * 60 * 60 * 1000) / 1000
   );
 
+  // CRITICAL: every Stripe API call must target the connected merchant's
+  // account, not our platform account. Without stripeAccount, .list() runs
+  // against our own dashboard and every merchant sees OUR numbers.
+  const opts = { stripeAccount: stripeAccountId };
+
   let totalDisputes = 0;
   try {
-    for await (const _dispute of stripe.disputes.list({
-      created: { gte: thirtyDaysAgo },
-      limit: 100,
-    })) {
+    for await (const _dispute of stripe.disputes.list(
+      { created: { gte: thirtyDaysAgo }, limit: 100 },
+      opts
+    )) {
       totalDisputes++;
     }
   } catch (err) {
@@ -32,12 +37,14 @@ export async function triggerInitialSync(
   }
 
   let totalCharges = 0;
+  let totalDeclines = 0;
   try {
-    for await (const charge of stripe.charges.list({
-      created: { gte: thirtyDaysAgo },
-      limit: 100,
-    })) {
+    for await (const charge of stripe.charges.list(
+      { created: { gte: thirtyDaysAgo }, limit: 100 },
+      opts
+    )) {
       if (charge.status === 'succeeded') totalCharges++;
+      else if (charge.status === 'failed') totalDeclines++;
     }
   } catch (err) {
     console.log(
@@ -48,10 +55,10 @@ export async function triggerInitialSync(
 
   let totalFraudWarnings = 0;
   try {
-    for await (const _warning of stripe.radar.earlyFraudWarnings.list({
-      created: { gte: thirtyDaysAgo },
-      limit: 100,
-    })) {
+    for await (const _warning of stripe.radar.earlyFraudWarnings.list(
+      { created: { gte: thirtyDaysAgo }, limit: 100 },
+      opts
+    )) {
       totalFraudWarnings++;
     }
   } catch {
@@ -64,8 +71,8 @@ export async function triggerInitialSync(
     totalCharges,
     totalDisputes,
     totalFraudWarnings,
-    totalDeclines: 0,
-    totalAttempts: totalCharges,
+    totalDeclines,
+    totalAttempts: totalCharges + totalDeclines,
     hasRestrictions: false,
   });
 
@@ -80,7 +87,7 @@ export async function triggerInitialSync(
         total_disputes: totalDisputes,
         total_fraud_warnings: totalFraudWarnings,
         total_refunds: 0,
-        total_declines: 0,
+        total_declines: totalDeclines,
         dispute_ratio: metrics.mcDisputeRatio,
         fraud_ratio: metrics.vampRatio,
         decline_rate: metrics.declineRate,
@@ -98,6 +105,6 @@ export async function triggerInitialSync(
   }
 
   console.log(
-    `Initial sync complete for ${stripeAccountId}: ${totalCharges} charges, ${totalDisputes} disputes, ${totalFraudWarnings} fraud warnings, health=${metrics.healthScore}`
+    `Initial sync complete for ${stripeAccountId}: ${totalCharges} charges, ${totalDeclines} declines, ${totalDisputes} disputes, ${totalFraudWarnings} fraud warnings, health=${metrics.healthScore}`
   );
 }
